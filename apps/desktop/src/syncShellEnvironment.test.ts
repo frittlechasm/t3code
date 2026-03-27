@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_MACOS_LOGIN_SHELL_ENV_NAMES } from "@t3tools/shared/shell";
 import { syncShellEnvironment } from "./syncShellEnvironment.ts";
 
 describe("syncShellEnvironment", () => {
@@ -42,6 +43,7 @@ describe("syncShellEnvironment", () => {
     const readEnvironment = vi.fn(() => ({
       PATH: "/opt/homebrew/bin:/usr/bin",
       SSH_AUTH_SOCK: "/tmp/login-shell.sock",
+      HOMEBREW_PREFIX: "/opt/homebrew",
     }));
 
     syncShellEnvironment(env, {
@@ -61,6 +63,7 @@ describe("syncShellEnvironment", () => {
     };
     const readEnvironment = vi.fn(() => ({
       PATH: "/opt/homebrew/bin:/usr/bin",
+      HOMEBREW_PREFIX: "/opt/homebrew",
     }));
 
     syncShellEnvironment(env, {
@@ -70,6 +73,7 @@ describe("syncShellEnvironment", () => {
 
     expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
     expect(env.SSH_AUTH_SOCK).toBe("/tmp/inherited.sock");
+    expect(env.HOMEBREW_PREFIX).toBe("/opt/homebrew");
   });
 
   it("hydrates PATH and missing SSH_AUTH_SOCK from the login shell on linux", () => {
@@ -80,6 +84,7 @@ describe("syncShellEnvironment", () => {
     const readEnvironment = vi.fn(() => ({
       PATH: "/home/linuxbrew/.linuxbrew/bin:/usr/bin",
       SSH_AUTH_SOCK: "/tmp/secretive.sock",
+      HOMEBREW_PREFIX: "/opt/homebrew",
     }));
 
     syncShellEnvironment(env, {
