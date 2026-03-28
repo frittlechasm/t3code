@@ -147,6 +147,7 @@ import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
+  buildTerminalPrewarmRequest,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
@@ -313,6 +314,7 @@ function formatOutgoingPrompt(params: {
 }
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
+const TERMINAL_PREWARM_DELAY_MS = 150;
 
 type ChatViewProps =
   | {
@@ -1434,6 +1436,34 @@ export default function ChatView(props: ChatViewProps) {
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
       : (storeServerTerminalLaunchContext ?? null);
+  const threadTerminalRuntimeEnv = useMemo(() => {
+    if (!activeProjectCwd) return {};
+    return projectScriptRuntimeEnv({
+      project: {
+        cwd: activeProjectCwd,
+      },
+      worktreePath: activeThreadWorktreePath,
+    });
+  }, [activeProjectCwd, activeThreadWorktreePath]);
+  const terminalPrewarmRequest = useMemo(
+    () =>
+      buildTerminalPrewarmRequest({
+        threadId: activeThreadId,
+        terminalId: terminalState.activeTerminalId,
+        terminalOpen: terminalState.terminalOpen,
+        cwd: gitCwd ?? activeProject?.cwd ?? null,
+        runtimeEnv: threadTerminalRuntimeEnv,
+        defaultTerminalId: DEFAULT_THREAD_TERMINAL_ID,
+      }),
+    [
+      activeProject?.cwd,
+      activeThreadId,
+      gitCwd,
+      terminalState.activeTerminalId,
+      terminalState.terminalOpen,
+      threadTerminalRuntimeEnv,
+    ],
+  );
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const terminalShortcutLabelOptions = useMemo(
@@ -1474,6 +1504,26 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
   );
+
+  useEffect(() => {
+    if (!terminalPrewarmRequest) {
+      return;
+    }
+
+    const api = readNativeApi();
+    if (!api) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void api.terminal.open(terminalPrewarmRequest).catch(() => undefined);
+    }, TERMINAL_PREWARM_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [terminalPrewarmRequest]);
+
   const onToggleDiff = useCallback(() => {
     if (!isServerThread) {
       return;
