@@ -7,6 +7,7 @@ import { type Thread } from "../types";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   buildExpiredTerminalContextToastCopy,
+  buildTerminalPrewarmRequest,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
@@ -716,5 +717,65 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
         threadError: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe("buildTerminalPrewarmRequest", () => {
+  const threadId = ThreadId.makeUnsafe("thread-prewarm");
+
+  it("builds a background open request for closed thread terminals", () => {
+    expect(
+      buildTerminalPrewarmRequest({
+        threadId,
+        terminalId: "terminal-2",
+        terminalOpen: false,
+        cwd: "/repo/worktrees/feature",
+        runtimeEnv: {
+          T3CODE_WORKTREE_PATH: "/repo/worktrees/feature",
+          T3CODE_PROJECT_ROOT: "/repo/project",
+        },
+        defaultTerminalId: "default",
+      }),
+    ).toEqual({
+      threadId,
+      terminalId: "terminal-2",
+      cwd: "/repo/worktrees/feature",
+      env: {
+        T3CODE_PROJECT_ROOT: "/repo/project",
+        T3CODE_WORKTREE_PATH: "/repo/worktrees/feature",
+      },
+    });
+  });
+
+  it("skips prewarm when the terminal drawer is already open", () => {
+    expect(
+      buildTerminalPrewarmRequest({
+        threadId,
+        terminalId: "default",
+        terminalOpen: true,
+        cwd: "/repo/project",
+        runtimeEnv: {
+          T3CODE_PROJECT_ROOT: "/repo/project",
+        },
+        defaultTerminalId: "default",
+      }),
+    ).toBeNull();
+  });
+
+  it("falls back to the default terminal id and omits empty env", () => {
+    expect(
+      buildTerminalPrewarmRequest({
+        threadId,
+        terminalId: "   ",
+        terminalOpen: false,
+        cwd: "/repo/project",
+        runtimeEnv: {},
+        defaultTerminalId: "default",
+      }),
+    ).toEqual({
+      threadId,
+      terminalId: "default",
+      cwd: "/repo/project",
+    });
   });
 });

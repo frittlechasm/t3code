@@ -67,6 +67,7 @@ vi.mock("../lib/gitStatusState", () => ({
 const THREAD_ID = "thread-browser-test" as ThreadId;
 const THREAD_TITLE = "Browser test thread";
 const ARCHIVED_SECONDARY_THREAD_ID = "thread-secondary-project-archived" as ThreadId;
+const SECOND_THREAD_ID = "thread-browser-test-2" as ThreadId;
 const PROJECT_ID = "project-1" as ProjectId;
 const SECOND_PROJECT_ID = "project-2" as ProjectId;
 const LOCAL_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
@@ -2787,6 +2788,73 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
     } finally {
       resolveDispatch({ sequence: fixture.snapshot.snapshotSequence + 1 });
+      await mounted.cleanup();
+    }
+  });
+
+  it("prewarms closed thread terminals without interfering with open-thread reattach", async () => {
+    useTerminalStateStore.getState().setTerminalOpen(THREAD_ID, true);
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: addThreadToSnapshot(
+        createSnapshotForTargetUser({
+          targetMessageId: "msg-user-switch-target" as MessageId,
+          targetText: "switch threads",
+        }),
+        SECOND_THREAD_ID,
+      ),
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.filter(
+              (request) =>
+                request._tag === WS_METHODS.terminalOpen && request.threadId === THREAD_ID,
+            ),
+          ).toHaveLength(1);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await mounted.router.navigate({
+        to: "/$threadId",
+        params: { threadId: SECOND_THREAD_ID },
+      });
+      await waitForLayout();
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.filter(
+              (request) =>
+                request._tag === WS_METHODS.terminalOpen && request.threadId === SECOND_THREAD_ID,
+            ),
+          ).toHaveLength(1);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await mounted.router.navigate({
+        to: "/$threadId",
+        params: { threadId: THREAD_ID },
+      });
+      await waitForLayout();
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.filter(
+              (request) =>
+                request._tag === WS_METHODS.terminalOpen && request.threadId === THREAD_ID,
+            ),
+          ).toHaveLength(2);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
       await mounted.cleanup();
     }
   });
