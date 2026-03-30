@@ -6,6 +6,7 @@ import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { Button } from "../components/ui/button";
 import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
 import { isElectron } from "../env";
+import { cn, isMacPlatform } from "../lib/utils";
 
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
@@ -24,6 +25,7 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
 }
 
 function SettingsContentLayout() {
+  const shouldOffsetForMacWindowControls = isElectron && isMacPlatform(navigator.platform);
   const location = useLocation();
   const [restoreSignal, setRestoreSignal] = useState(0);
   const showRestoreDefaults = location.pathname === "/settings/general";
@@ -63,14 +65,21 @@ function SettingsContentLayout() {
 
         {isElectron && (
           <div className="drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5 wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]">
-            <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
-              Settings
-            </span>
-            {showRestoreDefaults ? (
-              <div className="ms-auto flex items-center gap-2">
-                <RestoreDefaultsButton onRestored={handleRestored} />
-              </div>
-            ) : null}
+            <div
+              className={cn(
+                "flex min-w-0 flex-1 items-center",
+                shouldOffsetForMacWindowControls && "ml-[55px] md:ml-0",
+              )}
+            >
+              <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
+                Settings
+              </span>
+              {showRestoreDefaults ? (
+                <div className="ms-auto flex items-center gap-2">
+                  <RestoreDefaultsButton onRestored={handleRestored} />
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
 
