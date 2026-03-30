@@ -1472,6 +1472,24 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "terminal.close", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
   );
+  const onComposerAppKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: false,
+          terminalOpen: Boolean(terminalState.terminalOpen),
+        },
+      });
+      if (command !== "sidebar.left.toggle") {
+        return false;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSidebar();
+      return true;
+    },
+    [keybindings, terminalState.terminalOpen, toggleSidebar],
+  );
   const diffPanelShortcutLabel = useMemo(
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
