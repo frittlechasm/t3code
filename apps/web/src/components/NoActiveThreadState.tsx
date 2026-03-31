@@ -1,24 +1,43 @@
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
-import { SidebarInset, SidebarTrigger } from "./ui/sidebar";
+import { SidebarInset, SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { isElectron } from "../env";
-import { cn } from "~/lib/utils";
+import { cn, isMacPlatform } from "~/lib/utils";
 
 export function NoActiveThreadState() {
+  const { isMobile, open, openMobile } = useSidebar();
+  const showCollapsedSidebarTrigger = isMobile ? isElectron && !openMobile : !open;
+  const showFloatingSidebarTrigger = showCollapsedSidebarTrigger && !isElectron;
+  const shouldOffsetForMacWindowControls = isElectron && isMacPlatform(navigator.platform);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+        {showFloatingSidebarTrigger ? (
+          <SidebarTrigger className="absolute top-3 left-3 z-10 bg-background/90 shadow-xs backdrop-blur-xs" />
+        ) : null}
         <header
           className={cn(
             "border-b border-border px-3 sm:px-5",
             isElectron
-              ? "drag-region flex h-[52px] items-center wco:h-[env(titlebar-area-height)]"
+              ? "drag-region flex h-[52px] items-center gap-2 wco:h-[env(titlebar-area-height)]"
               : "py-2 sm:py-3",
           )}
         >
           {isElectron ? (
-            <span className="text-xs text-muted-foreground/50 wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]">
-              No active thread
-            </span>
+            <>
+              {showCollapsedSidebarTrigger ? (
+                <SidebarTrigger className="size-7 shrink-0" />
+              ) : null}
+              <div
+                className={cn(
+                  "min-w-0",
+                  shouldOffsetForMacWindowControls && !showCollapsedSidebarTrigger && "ml-[55px] md:ml-0",
+                )}
+              >
+                <span className="text-xs text-muted-foreground/50 wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]">
+                  No active thread
+                </span>
+              </div>
+            </>
           ) : (
             <div className="flex items-center gap-2">
               <SidebarTrigger className="size-7 shrink-0 md:hidden" />
