@@ -1512,7 +1512,7 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
-    const api = readNativeApi();
+    const api = readEnvironmentApi(environmentId);
     if (!api) {
       return;
     }
@@ -1524,7 +1524,7 @@ export default function ChatView(props: ChatViewProps) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [terminalPrewarmRequest]);
+  }, [environmentId, terminalPrewarmRequest]);
 
   const onToggleDiff = useCallback(() => {
     if (!isServerThread) {
