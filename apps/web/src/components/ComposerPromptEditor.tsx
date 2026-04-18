@@ -47,6 +47,7 @@ import {
   useMemo,
   useRef,
   type ClipboardEventHandler,
+  type KeyboardEventHandler,
   type ReactElement,
   type Ref,
 } from "react";
@@ -904,6 +905,7 @@ interface ComposerPromptEditorProps {
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
   ) => boolean;
+  onAppKeyDown?: (event: KeyboardEvent) => boolean;
   onPaste: ClipboardEventHandler<HTMLElement>;
 }
 
@@ -1408,6 +1410,7 @@ function ComposerPromptEditorInner({
   onRemoveTerminalContext,
   onChange,
   onCommandKeyDown,
+  onAppKeyDown,
   onPaste,
   editorRef,
 }: ComposerPromptEditorInnerProps) {
@@ -1617,6 +1620,20 @@ function ComposerPromptEditorInner({
     });
   }, []);
 
+  const handleKeyDown = useCallback<KeyboardEventHandler<HTMLElement>>(
+    (event) => {
+      if (!onAppKeyDown) {
+        return;
+      }
+      if (!onAppKeyDown(event.nativeEvent)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [onAppKeyDown],
+  );
+
   return (
     <ComposerTerminalContextActionsContext.Provider value={terminalContextActions}>
       <div className="relative">
@@ -1629,6 +1646,7 @@ function ComposerPromptEditorInner({
               )}
               data-testid="composer-editor"
               aria-placeholder={placeholder}
+              onKeyDown={handleKeyDown}
               placeholder={<span />}
               onPaste={onPaste}
             />
@@ -1669,6 +1687,7 @@ export const ComposerPromptEditor = forwardRef<
     onRemoveTerminalContext,
     onChange,
     onCommandKeyDown,
+    onAppKeyDown,
     onPaste,
   },
   ref,
@@ -1708,6 +1727,7 @@ export const ComposerPromptEditor = forwardRef<
         onChange={onChange}
         onPaste={onPaste}
         editorRef={ref}
+        {...(onAppKeyDown ? { onAppKeyDown } : {})}
         {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
         {...(className ? { className } : {})}
       />
