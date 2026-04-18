@@ -101,7 +101,7 @@ import PlanSidebar from "./PlanSidebar";
 import { useSidebar } from "./ui/sidebar";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon } from "lucide-react";
-import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
 import { toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -113,6 +113,7 @@ import {
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
+import { useTrafficLightOffset } from "../hooks/useTrafficLightOffset";
 import { resolveAppModelSelection } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { deriveLogicalProjectKeyFromSettings } from "../logicalProject";
@@ -594,7 +595,7 @@ export default function ChatView(props: ChatViewProps) {
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
   const { toggleSidebar } = useSidebar();
-  const shouldOffsetForMacWindowControls = isElectron && isMacPlatform(navigator.platform);
+  const needsTrafficLightOffset = useTrafficLightOffset();
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
@@ -3238,12 +3239,7 @@ export default function ChatView(props: ChatViewProps) {
             : "py-2 sm:py-3",
         )}
       >
-        <div
-          className={cn(
-            "flex min-w-0 flex-1",
-            shouldOffsetForMacWindowControls && "ml-[55px] md:ml-0",
-          )}
-        >
+        <div className={cn("flex min-w-0 flex-1", needsTrafficLightOffset && "ml-[55px]")}>
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
