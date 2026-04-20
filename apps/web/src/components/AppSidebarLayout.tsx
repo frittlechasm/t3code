@@ -1,12 +1,38 @@
 import { useEffect, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
+import { useCommandPaletteStore } from "../commandPaletteStore";
+import { resolveShortcutCommand } from "../keybindings";
+import { useServerKeybindings } from "~/rpc/serverState";
 import ThreadSidebar from "./Sidebar";
-import { Sidebar, SidebarProvider, SidebarRail } from "./ui/sidebar";
+import { Sidebar, SidebarProvider, SidebarRail, useSidebar } from "./ui/sidebar";
 import {
   clearShortcutModifierState,
   syncShortcutModifierStateFromKeyboardEvent,
 } from "../shortcutModifierState";
+
+function SidebarShortcutHandler() {
+  const { toggleSidebar } = useSidebar();
+  const keybindings = useServerKeybindings();
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (useCommandPaletteStore.getState().open) return;
+      const command = resolveShortcutCommand(event, keybindings, {});
+      if (command === "sidebar.left.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [toggleSidebar, keybindings]);
+
+  return null;
+}
 
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
@@ -55,6 +81,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen>
+      <SidebarShortcutHandler />
       <Sidebar
         side="left"
         collapsible="offcanvas"
