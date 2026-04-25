@@ -4,6 +4,7 @@ import {
   type ModelSelection,
   type ProviderKind,
   type ScopedThreadRef,
+  type TerminalOpenInput,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
@@ -356,4 +357,37 @@ export function hasServerAcknowledgedLocalDispatch(input: {
     input.localDispatch.sessionOrchestrationStatus !== (session?.orchestrationStatus ?? null) ||
     input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
   );
+}
+
+export function buildTerminalPrewarmRequest(input: {
+  threadId: ThreadId | null;
+  terminalId: string | null;
+  terminalOpen: boolean;
+  cwd: string | null;
+  runtimeEnv?: Record<string, string> | null;
+  defaultTerminalId: string;
+}): TerminalOpenInput | null {
+  if (input.terminalOpen || !input.threadId || !input.cwd) {
+    return null;
+  }
+
+  const terminalId = input.terminalId?.trim().length
+    ? input.terminalId.trim()
+    : input.defaultTerminalId;
+  const runtimeEnvEntries = Object.entries(input.runtimeEnv ?? {}).filter(
+    ([key]) => key.trim().length > 0,
+  );
+
+  return {
+    threadId: input.threadId,
+    terminalId,
+    cwd: input.cwd,
+    ...(runtimeEnvEntries.length > 0
+      ? {
+          env: Object.fromEntries(
+            runtimeEnvEntries.toSorted(([left], [right]) => left.localeCompare(right)),
+          ),
+        }
+      : {}),
+  };
 }
