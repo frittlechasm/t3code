@@ -10,6 +10,14 @@ const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
 const WINDOWS_SHELL_CANDIDATES = ["pwsh.exe", "powershell.exe"] as const;
 
+export const DEFAULT_MACOS_LOGIN_SHELL_ENV_NAMES = [
+  "PATH",
+  "SSH_AUTH_SOCK",
+  "HOMEBREW_PREFIX",
+  "HOMEBREW_CELLAR",
+  "HOMEBREW_REPOSITORY",
+] as const;
+
 type ExecFileSyncLike = (
   file: string,
   args: ReadonlyArray<string>,
@@ -182,6 +190,38 @@ export type ShellEnvironmentReader = (
   names: ReadonlyArray<string>,
   execFile?: ExecFileSyncLike,
 ) => Partial<Record<string, string>>;
+
+export function syncShellEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+  options: {
+    platform?: NodeJS.Platform;
+    readEnvironment?: ShellEnvironmentReader;
+    names?: ReadonlyArray<string>;
+  } = {},
+): void {
+  if ((options.platform ?? process.platform) !== "darwin") return;
+
+  try {
+    const shell = env.SHELL ?? "/bin/zsh";
+    const names = options.names ?? DEFAULT_MACOS_LOGIN_SHELL_ENV_NAMES;
+    const shellEnvironment = (options.readEnvironment ?? readEnvironmentFromLoginShell)(
+      shell,
+      names,
+    );
+
+    for (const name of names) {
+      const value = shellEnvironment[name];
+      if (!value) continue;
+      if (name === "PATH") {
+        env.PATH = value;
+      } else if (!env[name]) {
+        env[name] = value;
+      }
+    }
+  } catch {
+    // Keep inherited environment if shell lookup fails.
+  }
+}
 
 export const readEnvironmentFromLoginShell: ShellEnvironmentReader = (
   shell,

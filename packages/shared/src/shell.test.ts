@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_MACOS_LOGIN_SHELL_ENV_NAMES,
   extractPathFromShellOutput,
   isCommandAvailable,
   listLoginShellCandidates,
@@ -12,6 +13,7 @@ import {
   readPathFromLoginShell,
   resolveKnownWindowsCliDirs,
   resolveWindowsEnvironment,
+  syncShellEnvironment,
 } from "./shell.ts";
 
 describe("extractPathFromShellOutput", () => {
@@ -454,5 +456,79 @@ describe("resolveWindowsEnvironment", () => {
       FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
     });
     expect(commandAvailable).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("syncShellEnvironment", () => {
+  it("hydrates PATH and missing login-shell variables on macOS", () => {
+    const env: NodeJS.ProcessEnv = {
+      SHELL: "/bin/zsh",
+      PATH: "/usr/bin",
+    };
+    const readEnvironment = vi.fn(() => ({
+      PATH: "/opt/homebrew/bin:/usr/bin",
+      SSH_AUTH_SOCK: "/tmp/secretive.sock",
+      HOMEBREW_PREFIX: "/opt/homebrew",
+      HOMEBREW_CELLAR: "/opt/homebrew/Cellar",
+      HOMEBREW_REPOSITORY: "/opt/homebrew",
+    }));
+
+    syncShellEnvironment(env, {
+      platform: "darwin",
+      readEnvironment,
+    });
+
+    expect(readEnvironment).toHaveBeenCalledWith("/bin/zsh", DEFAULT_MACOS_LOGIN_SHELL_ENV_NAMES);
+    expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
+    expect(env.SSH_AUTH_SOCK).toBe("/tmp/secretive.sock");
+    expect(env.HOMEBREW_PREFIX).toBe("/opt/homebrew");
+    expect(env.HOMEBREW_CELLAR).toBe("/opt/homebrew/Cellar");
+    expect(env.HOMEBREW_REPOSITORY).toBe("/opt/homebrew");
+  });
+
+  it("preserves inherited non-PATH values", () => {
+    const env: NodeJS.ProcessEnv = {
+      SHELL: "/bin/zsh",
+      PATH: "/usr/bin",
+      SSH_AUTH_SOCK: "/tmp/inherited.sock",
+      HOMEBREW_PREFIX: "/custom/homebrew",
+    };
+    const readEnvironment = vi.fn(() => ({
+      PATH: "/opt/homebrew/bin:/usr/bin",
+      SSH_AUTH_SOCK: "/tmp/login-shell.sock",
+      HOMEBREW_PREFIX: "/opt/homebrew",
+      HOMEBREW_CELLAR: "/opt/homebrew/Cellar",
+    }));
+
+    syncShellEnvironment(env, {
+      platform: "darwin",
+      readEnvironment,
+    });
+
+    expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
+    expect(env.SSH_AUTH_SOCK).toBe("/tmp/inherited.sock");
+    expect(env.HOMEBREW_PREFIX).toBe("/custom/homebrew");
+    expect(env.HOMEBREW_CELLAR).toBe("/opt/homebrew/Cellar");
+  });
+
+  it("does nothing outside macOS", () => {
+    const env: NodeJS.ProcessEnv = {
+      SHELL: "/bin/zsh",
+      PATH: "/usr/bin",
+      HOMEBREW_PREFIX: "/custom/homebrew",
+    };
+    const readEnvironment = vi.fn(() => ({
+      PATH: "/opt/homebrew/bin:/usr/bin",
+      HOMEBREW_PREFIX: "/opt/homebrew",
+    }));
+
+    syncShellEnvironment(env, {
+      platform: "linux",
+      readEnvironment,
+    });
+
+    expect(readEnvironment).not.toHaveBeenCalled();
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.HOMEBREW_PREFIX).toBe("/custom/homebrew");
   });
 });
