@@ -103,6 +103,27 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }),
   );
 
+  it.effect("compiles sidebar toggle shortcuts without a focus gate", () =>
+    Effect.sync(() => {
+      const compiled = compileResolvedKeybindingRule({
+        key: "mod+b",
+        command: "sidebar.left.toggle",
+      });
+
+      assert.deepEqual(compiled, {
+        command: "sidebar.left.toggle",
+        shortcut: {
+          key: "b",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          modKey: true,
+        },
+      });
+    }),
+  );
+
   it.effect("encodes resolved plus-key shortcuts", () =>
     Effect.gen(function* () {
       const encoded = yield* Schema.encodeEffect(ResolvedKeybindingFromConfig)({
