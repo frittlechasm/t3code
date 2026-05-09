@@ -52,6 +52,8 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.split",
   "terminal.new",
   "terminal.close",
+  "terminal.tabPrevious",
+  "terminal.tabNext",
   "diff.toggle",
   "commandPalette.toggle",
   "chat.new",

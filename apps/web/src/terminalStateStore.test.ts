@@ -138,6 +138,23 @@ describe("terminalStateStore actions", () => {
     ]);
   });
 
+  it("creates a new terminal group after splitting the active terminal group", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.newTerminal(THREAD_REF, "terminal-3");
+
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.activeTerminalId).toBe("terminal-3");
+    expect(terminalState.activeTerminalGroupId).toBe("group-terminal-3");
+    expect(terminalState.terminalGroups).toEqual([
+      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      { id: "group-terminal-3", terminalIds: ["terminal-3"] },
+    ]);
+  });
+
   it("ensures unknown server terminals are registered, opened, and activated", () => {
     const store = useTerminalStateStore.getState();
     store.ensureTerminal(THREAD_REF, "setup-setup", { open: true, active: true });
