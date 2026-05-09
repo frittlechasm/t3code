@@ -76,6 +76,7 @@ import {
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import {
+  nativeTerminalTabTraversalDirection,
   resolveShortcutCommand,
   shortcutLabelForCommand,
   shouldShowThreadJumpHintsForModifiers,
@@ -3199,6 +3200,13 @@ export default function Sidebar() {
       const shortcutContext = getCurrentSidebarShortcutContext();
 
       if (event.defaultPrevented || event.repeat) {
+        return;
+      }
+
+      if (
+        shortcutContext.terminalFocus &&
+        nativeTerminalTabTraversalDirection(event, platform) !== null
+      ) {
         return;
       }
 

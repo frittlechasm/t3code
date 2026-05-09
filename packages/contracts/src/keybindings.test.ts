@@ -35,6 +35,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedClose.command, "terminal.close");
 
+    const parsedTabNext = yield* decode(KeybindingRule, {
+      key: "mod+]",
+      command: "terminal.tabNext",
+    });
+    assert.strictEqual(parsedTabNext.command, "terminal.tabNext");
+
     const parsedDiffToggle = yield* decode(KeybindingRule, {
       key: "mod+d",
       command: "diff.toggle",

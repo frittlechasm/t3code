@@ -35,7 +35,7 @@ import {
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { Debouncer } from "@tanstack/react-pacer";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
@@ -101,7 +101,12 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { BranchToolbar } from "./BranchToolbar";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  nativeTerminalShortcutAction,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+  terminalShortcutActionFromCommand,
+} from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon, TriangleAlertIcon, WifiOffIcon } from "lucide-react";
@@ -1813,6 +1818,50 @@ export default function ChatView(props: ChatViewProps) {
     storeNewTerminal(activeThreadRef, terminalId);
     setTerminalFocusRequestId((value) => value + 1);
   }, [activeThreadRef, storeNewTerminal]);
+  const cycleTerminalTab = useCallback(
+    (direction: "previous" | "next") => {
+      if (!activeThreadRef || !terminalState.terminalOpen) return;
+      const terminalGroups = terminalState.terminalGroups;
+      let terminalGroupCount = 0;
+      let activeGroupIndex = -1;
+      let firstGroupIndex = -1;
+
+      for (let index = 0; index < terminalGroups.length; index += 1) {
+        const group = terminalGroups[index];
+        if (!group || group.terminalIds.length === 0) continue;
+        if (firstGroupIndex === -1) firstGroupIndex = index;
+        terminalGroupCount += 1;
+        if (
+          group.id === terminalState.activeTerminalGroupId ||
+          group.terminalIds.includes(terminalState.activeTerminalId)
+        ) {
+          activeGroupIndex = index;
+        }
+      }
+      if (terminalGroupCount <= 1 || firstGroupIndex === -1) return;
+      if (activeGroupIndex === -1) activeGroupIndex = firstGroupIndex;
+
+      const offset = direction === "previous" ? -1 : 1;
+      let nextGroupIndex = activeGroupIndex;
+      do {
+        nextGroupIndex = (nextGroupIndex + offset + terminalGroups.length) % terminalGroups.length;
+      } while ((terminalGroups[nextGroupIndex]?.terminalIds.length ?? 0) === 0);
+      const nextGroup = terminalGroups[nextGroupIndex];
+      const nextTerminalId = nextGroup?.terminalIds[0];
+      if (!nextTerminalId) return;
+
+      storeSetActiveTerminal(activeThreadRef, nextTerminalId);
+      setTerminalFocusRequestId((value) => value + 1);
+    },
+    [
+      activeThreadRef,
+      storeSetActiveTerminal,
+      terminalState.activeTerminalGroupId,
+      terminalState.activeTerminalId,
+      terminalState.terminalGroups,
+      terminalState.terminalOpen,
+    ],
+  );
   const closeTerminal = useCallback(
     (terminalId: string) => {
       const api = readEnvironmentApi(environmentId);
@@ -2459,95 +2508,113 @@ export default function ChatView(props: ChatViewProps) {
     terminalOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalState.terminalOpen]);
 
-  useEffect(() => {
-    const handler = (event: globalThis.KeyboardEvent) => {
-      if (!activeThreadId || useCommandPaletteStore.getState().open || event.defaultPrevented) {
-        return;
-      }
-      const shortcutContext = {
-        terminalFocus: isTerminalFocused(),
-        terminalOpen: Boolean(terminalState.terminalOpen),
-        modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
-      };
+  const handleGlobalShortcutKeyDown = useEffectEvent((event: globalThis.KeyboardEvent) => {
+    if (!activeThreadId || useCommandPaletteStore.getState().open || event.defaultPrevented) {
+      return;
+    }
+    const shortcutContext = {
+      terminalFocus: isTerminalFocused(),
+      terminalOpen: Boolean(terminalState.terminalOpen),
+      modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+    };
 
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: shortcutContext,
-      });
-      if (!command) return;
-
-      if (command === "terminal.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleTerminalVisibility();
-        return;
-      }
-
-      if (command === "terminal.split") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!terminalState.terminalOpen) {
-          setTerminalOpen(true);
-        }
-        splitTerminal();
-        return;
-      }
-
-      if (command === "terminal.close") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!terminalState.terminalOpen) return;
-        closeTerminal(terminalState.activeTerminalId);
-        return;
-      }
-
-      if (command === "terminal.new") {
-        event.preventDefault();
-        event.stopPropagation();
+    const nativeTerminalAction = shortcutContext.terminalFocus
+      ? nativeTerminalShortcutAction(event)
+      : null;
+    if (nativeTerminalAction !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (nativeTerminalAction === "new") {
         if (!terminalState.terminalOpen) {
           setTerminalOpen(true);
         }
         createNewTerminal();
         return;
       }
-
-      if (command === "diff.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        onToggleDiff();
+      if (nativeTerminalAction === "tabPrevious" || nativeTerminalAction === "tabNext") {
+        cycleTerminalTab(nativeTerminalAction === "tabPrevious" ? "previous" : "next");
         return;
       }
+    }
 
-      if (command === "modelPicker.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        composerRef.current?.toggleModelPicker();
-        return;
-      }
+    const command = resolveShortcutCommand(event, keybindings, {
+      context: shortcutContext,
+    });
+    if (!command) return;
 
-      const scriptId = projectScriptIdFromCommand(command);
-      if (!scriptId || !activeProject) return;
-      const script = activeProject.scripts.find((entry) => entry.id === scriptId);
-      if (!script) return;
+    const terminalAction = terminalShortcutActionFromCommand(command);
+    if (terminalAction === "toggle") {
       event.preventDefault();
       event.stopPropagation();
-      void runProjectScript(script);
+      toggleTerminalVisibility();
+      return;
+    }
+
+    if (terminalAction === "split") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!terminalState.terminalOpen) {
+        setTerminalOpen(true);
+      }
+      splitTerminal();
+      return;
+    }
+
+    if (terminalAction === "close") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!terminalState.terminalOpen) return;
+      closeTerminal(terminalState.activeTerminalId);
+      return;
+    }
+
+    if (terminalAction === "new") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!terminalState.terminalOpen) {
+        setTerminalOpen(true);
+      }
+      createNewTerminal();
+      return;
+    }
+
+    if (terminalAction === "tabPrevious" || terminalAction === "tabNext") {
+      event.preventDefault();
+      event.stopPropagation();
+      cycleTerminalTab(terminalAction === "tabPrevious" ? "previous" : "next");
+      return;
+    }
+
+    if (command === "diff.toggle") {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggleDiff();
+      return;
+    }
+
+    if (command === "modelPicker.toggle") {
+      event.preventDefault();
+      event.stopPropagation();
+      composerRef.current?.toggleModelPicker();
+      return;
+    }
+
+    const scriptId = projectScriptIdFromCommand(command);
+    if (!scriptId || !activeProject) return;
+    const script = activeProject.scripts.find((entry) => entry.id === scriptId);
+    if (!script) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void runProjectScript(script);
+  });
+
+  useEffect(() => {
+    const handler = (event: globalThis.KeyboardEvent) => {
+      handleGlobalShortcutKeyDown(event);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [
-    activeProject,
-    terminalState.terminalOpen,
-    terminalState.activeTerminalId,
-    activeThreadId,
-    closeTerminal,
-    createNewTerminal,
-    setTerminalOpen,
-    runProjectScript,
-    splitTerminal,
-    keybindings,
-    onToggleDiff,
-    toggleTerminalVisibility,
-  ]);
+  }, []);
 
   const onRevertToTurnCount = useCallback(
     async (turnCount: number) => {

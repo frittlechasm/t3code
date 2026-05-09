@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   resolveTerminalSelectionActionPosition,
+  resolveThreadTerminalDrawerLayout,
   selectPendingTerminalEventEntries,
   selectTerminalEventEntriesAfterSnapshot,
   shouldHandleTerminalSelectionMouseUp,
@@ -133,5 +134,65 @@ describe("resolveTerminalSelectionActionPosition", () => {
         1,
       ).map((entry) => entry.id),
     ).toEqual([2]);
+  });
+});
+
+describe("resolveThreadTerminalDrawerLayout", () => {
+  it("derives active group, visible terminals, labels, and tab metadata in one pass", () => {
+    const layout = resolveThreadTerminalDrawerLayout({
+      terminalIds: ["default", "terminal-2", "terminal-3"],
+      activeTerminalId: "terminal-2",
+      activeTerminalGroupId: "group-default",
+      terminalGroups: [
+        { id: "group-default", terminalIds: ["default", "terminal-2"] },
+        { id: "group-terminal-3", terminalIds: ["terminal-3"] },
+      ],
+    });
+
+    expect(layout.activeTerminalId).toBe("terminal-2");
+    expect(layout.activeGroupIndex).toBe(0);
+    expect(layout.visibleTerminalIds).toEqual(["default", "terminal-2"]);
+    expect(layout.terminalLabelById.get("terminal-3")).toBe("Terminal 3");
+    expect(layout.tabs).toEqual([
+      {
+        groupId: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        terminalId: "terminal-2",
+        label: "Split 1",
+        active: true,
+      },
+      {
+        groupId: "group-terminal-3",
+        terminalIds: ["terminal-3"],
+        terminalId: "terminal-3",
+        label: "Terminal 3",
+        active: false,
+      },
+    ]);
+    expect(layout.showTerminalTabs).toBe(true);
+    expect(layout.isSplitView).toBe(true);
+  });
+
+  it("falls back to the default terminal when given an empty layout", () => {
+    const layout = resolveThreadTerminalDrawerLayout({
+      terminalIds: [],
+      activeTerminalId: "",
+      activeTerminalGroupId: "",
+      terminalGroups: [],
+    });
+
+    expect(layout.terminalIds).toEqual(["default"]);
+    expect(layout.activeTerminalId).toBe("default");
+    expect(layout.visibleTerminalIds).toEqual(["default"]);
+    expect(layout.showTerminalTabs).toBe(false);
+    expect(layout.tabs).toEqual([
+      {
+        groupId: "group-default",
+        terminalIds: ["default"],
+        terminalId: "default",
+        label: "Terminal 1",
+        active: true,
+      },
+    ]);
   });
 });
