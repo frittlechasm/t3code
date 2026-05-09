@@ -34,6 +34,25 @@ export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSe
   },
 ) {}
 
+export const ProjectListEntriesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+});
+export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
+
+export const ProjectListEntriesResult = Schema.Struct({
+  entries: Schema.Array(ProjectEntry),
+  truncated: Schema.Boolean,
+});
+export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
+
+export class ProjectListEntriesError extends Schema.TaggedErrorClass<ProjectListEntriesError>()(
+  "ProjectListEntriesError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),

@@ -1,9 +1,15 @@
-import type { EnvironmentId, ProjectSearchEntriesResult } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectListEntriesResult,
+  ProjectSearchEntriesResult,
+} from "@t3tools/contracts";
 import { queryOptions } from "@tanstack/react-query";
 import { ensureEnvironmentApi } from "~/environmentApi";
 
 export const projectQueryKeys = {
   all: ["projects"] as const,
+  listEntries: (environmentId: EnvironmentId | null, cwd: string | null) =>
+    ["projects", "list-entries", environmentId ?? null, cwd] as const,
   searchEntries: (
     environmentId: EnvironmentId | null,
     cwd: string | null,
@@ -11,6 +17,33 @@ export const projectQueryKeys = {
     limit: number,
   ) => ["projects", "search-entries", environmentId ?? null, cwd, query, limit] as const,
 };
+
+const DEFAULT_LIST_ENTRIES_STALE_TIME = 15_000;
+const EMPTY_LIST_ENTRIES_RESULT: ProjectListEntriesResult = {
+  entries: [],
+  truncated: false,
+};
+
+export function projectListEntriesQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  enabled?: boolean;
+  staleTime?: number;
+}) {
+  return queryOptions({
+    queryKey: projectQueryKeys.listEntries(input.environmentId, input.cwd),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId) {
+        throw new Error("Workspace entry list is unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.projects.listEntries({ cwd: input.cwd });
+    },
+    enabled: (input.enabled ?? true) && input.environmentId !== null && input.cwd !== null,
+    staleTime: input.staleTime ?? DEFAULT_LIST_ENTRIES_STALE_TIME,
+    placeholderData: (previous) => previous ?? EMPTY_LIST_ENTRIES_RESULT,
+  });
+}
 
 const DEFAULT_SEARCH_ENTRIES_LIMIT = 80;
 const DEFAULT_SEARCH_ENTRIES_STALE_TIME = 15_000;

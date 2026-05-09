@@ -11,7 +11,11 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
-import { type FilesystemBrowseInput, type ProjectEntry } from "@t3tools/contracts";
+import {
+  type FilesystemBrowseInput,
+  type ProjectEntry,
+  type ProjectListEntriesInput,
+} from "@t3tools/contracts";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
 import {
   insertRankedSearchResult,
@@ -510,9 +514,22 @@ export const makeWorkspaceEntries = Effect.gen(function* () {
     },
   );
 
+  const listEntries: WorkspaceEntriesShape["listEntries"] = Effect.fn(
+    "WorkspaceEntries.listEntries",
+  )(function* (input: ProjectListEntriesInput) {
+    const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+    return yield* Cache.get(workspaceIndexCache, normalizedCwd).pipe(
+      Effect.map((index) => ({
+        entries: index.entries,
+        truncated: index.truncated,
+      })),
+    );
+  });
+
   return {
     browse,
     invalidate,
+    listEntries,
     search,
   } satisfies WorkspaceEntriesShape;
 });
