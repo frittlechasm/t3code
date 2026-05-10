@@ -145,11 +145,11 @@ If startup cost is noticeable in large repos, switch the explorer to lazy loadin
 Implemented RPCs / data sources:
 
 - `projects.readFile`: reads a project-relative text file for preview. Reads are bounded by size, path-validated, realpath-contained under the project root, and return explicit non-crashing states for binary, too-large, and missing files.
+- `vcs.getFileDiff`: fetches a bounded current working-tree patch for one project-relative file. It validates relative paths, supports staged/unstaged selection, covers tracked changes through `git diff`, and handles untracked files with a `/dev/null` no-index patch. Accepts an optional `contextLines` parameter: omitting it defaults to full-file context (`--unified=1_000_000`) for the code view; passing a small value (e.g. `8`) produces a compact hunk-only patch for the changes view.
 
 Planned RPCs / data sources:
 
 - `vcs.getFileStatus` or an extension to `vcs.status`: expose per-path status kinds (`added`, `deleted`, `modified`, `renamed`, `untracked`, `ignored`) instead of only insertion/deletion counts.
-- `vcs.getFileDiff`: fetch the current working-tree diff for one project-relative file. This should cover staged and unstaged changes, and distinguish deleted/renamed/untracked files.
 
 Initial shortcut:
 
@@ -207,23 +207,35 @@ All implementation complete. Server tests for `listEntries` are deferred to Mile
 6. ✅ Binary files, files above the preview size limit, missing/deleted files, unreadable files, and missing workspace state all render non-crashing states.
 7. ✅ Preview rendering is plain text for now; syntax highlighting remains deferred until it can be loaded lazily and kept cheap.
 
-### Milestone 8 — Selected-file working-tree changes
+### Milestone 8 — Selected-file working-tree changes (✅ done)
 
-1. Add a per-file working-tree diff RPC, likely `vcs.getFileDiff({ cwd, path, includeStaged, includeUnstaged })`.
-2. Render selected-file changes using the existing `@pierre/diffs/react` path where possible.
-3. Support at least modified, added, deleted, renamed, and untracked files.
-4. Provide a compact mode switch in the preview pane: file contents vs changes. Default to changes when the selected file has working-tree changes; otherwise default to contents.
-5. Keep this independent from checkpoint/turn diffs. The existing diff panel remains turn/checkpoint oriented, while this preview shows the current project working tree.
-6. Reuse existing diff settings where appropriate (`diffWordWrap`, `diffIgnoreWhitespace`) without coupling the preview pane to diff route params.
+1. ✅ Added `vcs.getFileDiff({ cwd, path, includeStaged, includeUnstaged, ignoreWhitespace, maxBytes, contextLines })`.
+2. ✅ Server diff generation is bounded, validates project-relative paths, supports staged/unstaged combinations, and returns explicit `patch`, `empty`, and `too_large` result states.
+3. ✅ Tracked modified/added/deleted/renamed files are handled through `git diff`; untracked files are handled through `git diff --no-index` against `/dev/null`.
+4. ✅ The preview pane has a contents/changes mode toggle. It defaults to changes when the selected file appears in the current working-tree status, otherwise contents.
+5. ✅ **Changes mode** fetches a compact patch (`contextLines: 8`) and renders it with `FileDiff` — showing only the changed hunks with 8 lines of surrounding context, exactly like a normal `git diff` view.
+6. ✅ **Contents mode** fetches a full-context patch (default `contextLines: 1_000_000`) and renders it with `FileDiff` + `expandUnchanged: true` — showing the complete file with changed lines highlighted in the same green/red palette as the diff view. Falls back to the plain `File` component if no diff is available or the patch is too large.
+7. ✅ The two modes use separate React Query entries (different `contextLines` in the query key) so they cache and fetch independently.
+8. ✅ Selected-file diff rendering uses `@pierre/diffs/react` when patch parsing succeeds, with a raw patch fallback for unexpected patch shapes.
+9. ✅ The working-tree preview remains independent from checkpoint/turn diffs and does not use diff route params.
+10. ✅ Existing diff settings are reused where appropriate: `diffIgnoreWhitespace` affects both queries and `diffWordWrap` affects rendering.
+11. ✅ Added server coverage for tracked file diffs, untracked file diffs, and path traversal rejection in `GitVcsDriverCore.test.ts`.
+
+### Milestone 8.5 — Open previewed file with `mod+o` (✅ done)
+
+1. ✅ When the file explorer panel is open and a file is being previewed, `mod+o` opens the selected file in the preferred editor instead of the project directory.
+2. ✅ Uses a capture-phase keydown handler on `window` with `stopImmediatePropagation` to intercept the shortcut before the default project-open handler in `OpenInPicker`.
+3. ✅ The handler only activates when `panel === "files"` in the route search (checked via `useSearch({ strict: false })`) AND a file is selected. Falls through to the default project-open behavior when no file is selected or the panel is closed.
+4. ✅ Reuses `isOpenFavoriteEditorShortcut`, `useServerKeybindings`, and `openInPreferredEditor` — no new keybinding commands or server changes needed.
 
 ### Milestone 9 — Tests and validation
 
 Run before merge:
 
-- `bun fmt`
-- `bun lint`
-- `bun typecheck`
-- `bun run test` for all touched packages
+- ✅ `bun fmt` — all files formatted correctly.
+- ✅ `bun lint` — 0 errors (9 pre-existing warnings unrelated to file explorer).
+- ✅ `bun typecheck` — all 13 packages pass.
+- ✅ `bun run test` — 1009 tests passed across 122 test files (16 suites).
 
 Focused test areas still needed:
 
@@ -231,7 +243,7 @@ Focused test areas still needed:
 - File explorer rendering states and row activation.
 - Git status mapping and tree decoration updates.
 - File preview UI rendering states.
-- Selected-file working-tree diff rendering for modified, added, deleted, renamed, and untracked files.
+- Browser/UI coverage for selected-file working-tree diff rendering and contents/changes mode switching.
 - Browser test: `mod+shift+e` toggles the right panel; mutual exclusion with diff (opening one closes the other).
 
 ## Reliability Notes
@@ -252,5 +264,6 @@ Focused test areas still needed:
 5. ✅ File selection, editor-open, and edge states
 6. ✅ Git status decorations
 7. ✅ Read-only file preview
-8. Selected-file working-tree changes ← **NEXT**
+8. ✅ Selected-file working-tree changes
+   8.5. ✅ Open previewed file with `mod+o`
 9. Tests and final validation

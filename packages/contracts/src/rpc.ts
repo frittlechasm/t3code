@@ -34,6 +34,8 @@ import {
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
+  VcsFileDiffInput,
+  VcsFileDiffResult,
   VcsStatusInput,
   VcsStatusResult,
   VcsStatusStreamEvent,
@@ -141,6 +143,7 @@ export const WS_METHODS = {
   // VCS methods
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
+  vcsGetFileDiff: "vcs.getFileDiff",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
@@ -371,6 +374,12 @@ export const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
+export const WsVcsGetFileDiffRpc = Rpc.make(WS_METHODS.vcsGetFileDiff, {
+  payload: VcsFileDiffInput,
+  success: VcsFileDiffResult,
+  error: GitCommandError,
+});
+
 export const WsGitRunStackedActionRpc = Rpc.make(WS_METHODS.gitRunStackedAction, {
   payload: GitRunStackedActionInput,
   success: GitActionProgressEvent,
@@ -592,6 +601,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
+  WsVcsGetFileDiffRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,

@@ -1,10 +1,17 @@
 import { FileTree as FileTreeComponent, useFileTree } from "@pierre/trees/react";
 import type { FileTreeSortEntry, GitStatusEntry } from "@pierre/trees";
+import { parsePatchFiles } from "@pierre/diffs";
+import { File, FileDiff, type FileContents, type FileDiffMetadata } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
-import type { ProjectEntry, ProjectReadFileResult, VcsStatusResult } from "@t3tools/contracts";
+import { useParams, useSearch } from "@tanstack/react-router";
+import type {
+  ProjectEntry,
+  ProjectReadFileResult,
+  VcsFileDiffResult,
+  VcsStatusResult,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { ExternalLinkIcon } from "lucide-react";
+import { Code2Icon, ExternalLinkIcon, GitCompareIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -16,6 +23,16 @@ import {
   type ReactNode,
 } from "react";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
+import { useSettings } from "~/hooks/useSettings";
+import { useServerKeybindings } from "~/rpc/serverState";
+import { isOpenFavoriteEditorShortcut } from "../keybindings";
+import { useTheme } from "~/hooks/useTheme";
+import {
+  DIFF_RENDER_UNSAFE_CSS,
+  buildPatchCacheKey,
+  resolveDiffThemeName,
+} from "~/lib/diffRendering";
+import { vcsFileDiffQueryOptions } from "~/lib/gitReactQuery";
 import { useGitStatus } from "~/lib/gitStatusState";
 import {
   projectListEntriesQueryOptions,
@@ -30,16 +47,25 @@ import { resolveThreadRouteRef } from "../threadRoutes";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { Toggle, ToggleGroup } from "./ui/toggle-group";
 
 type FileExplorerPanelMode = DiffPanelMode;
 
 const EMPTY_PROJECT_ENTRIES: readonly ProjectEntry[] = [];
 const EMPTY_GIT_STATUS_ENTRIES: readonly GitStatusEntry[] = [];
+const FILE_EXPLORER_DIFF_CONTEXT_LINES = 8;
 const FILE_TREE_PANE_WIDTH_STORAGE_KEY = "chat_file_explorer_tree_width";
 const FILE_TREE_PANE_DEFAULT_WIDTH = 220;
 const FILE_TREE_PANE_MIN_WIDTH = 180;
 const FILE_TREE_PANE_MAX_WIDTH = 420;
 const FILE_PREVIEW_MIN_WIDTH = 220;
+
+type FilePreviewMode = "contents" | "changes";
+type DiffThemeType = "light" | "dark";
+
+type RenderableFileDiff =
+  | { kind: "file"; fileDiff: FileDiffMetadata }
+  | { kind: "raw"; text: string; reason: string };
 
 function clampFileTreePaneWidth(width: number, containerWidth?: number): number {
   const maxWidth =
@@ -112,6 +138,52 @@ function fileNameOf(path: string): string {
   return path.split("/").at(-1) ?? path;
 }
 
+function isPathChanged(status: VcsStatusResult | null, path: string | null): boolean {
+  if (!path || !status?.isRepo) return false;
+  return status.workingTree.files.some((file) => file.path === path);
+}
+
+function getRenderableFileDiff(
+  patch: string | undefined,
+  cacheScope: string,
+): RenderableFileDiff | null {
+  if (!patch || patch.trim().length === 0) return null;
+  const normalizedPatch = patch.trim();
+
+  try {
+    const parsedPatches = parsePatchFiles(
+      normalizedPatch,
+      buildPatchCacheKey(normalizedPatch, cacheScope),
+    );
+    const fileDiff = parsedPatches.flatMap((parsedPatch) => parsedPatch.files).at(0);
+    if (fileDiff) {
+      return { kind: "file", fileDiff };
+    }
+    return {
+      kind: "raw",
+      text: normalizedPatch,
+      reason: "Unsupported diff format. Showing raw patch.",
+    };
+  } catch {
+    return {
+      kind: "raw",
+      text: normalizedPatch,
+      reason: "Failed to parse patch. Showing raw patch.",
+    };
+  }
+}
+
+function buildPreviewFileContents(path: string, readFile: ProjectReadFileResult): FileContents {
+  return {
+    name: path,
+    contents: readFile.state === "text" ? readFile.contents : "",
+    cacheKey:
+      readFile.state === "text"
+        ? `file-preview:${path}:${readFile.sizeBytes}:${readFile.contents.length}`
+        : `file-preview:${path}:empty`,
+  };
+}
+
 interface FileExplorerPanelProps {
   mode?: FileExplorerPanelMode;
 }
@@ -127,11 +199,78 @@ function FilePreviewState(props: { children: ReactNode }) {
 function FilePreviewContent(props: {
   selectedPath: string | null;
   readFile: ProjectReadFileResult | undefined;
+  compactFileDiff: VcsFileDiffResult | undefined;
+  fullFileDiff: VcsFileDiffResult | undefined;
+  previewMode: FilePreviewMode;
   isLoading: boolean;
+  isCompactDiffLoading: boolean;
   error: unknown;
+  compactDiffError: unknown;
+  diffWordWrap: boolean;
+  resolvedTheme: "light" | "dark";
 }) {
   if (!props.selectedPath) {
     return <FilePreviewState>Select a file to preview.</FilePreviewState>;
+  }
+
+  if (props.previewMode === "changes") {
+    if (props.isCompactDiffLoading && props.compactFileDiff === undefined) {
+      return <FilePreviewState>Loading changes...</FilePreviewState>;
+    }
+
+    if (props.compactDiffError) {
+      return <FilePreviewState>Unable to load changes.</FilePreviewState>;
+    }
+
+    const fileDiff = props.compactFileDiff;
+    if (!fileDiff || fileDiff.state === "empty") {
+      return <FilePreviewState>No working-tree changes for this file.</FilePreviewState>;
+    }
+
+    if (fileDiff.state === "too_large") {
+      return (
+        <FilePreviewState>
+          Changes are too large to preview ({formatBytes(fileDiff.sizeBytes)}; limit{" "}
+          {formatBytes(fileDiff.maxBytes)}).
+        </FilePreviewState>
+      );
+    }
+
+    const renderableDiff = getRenderableFileDiff(
+      fileDiff.patch,
+      `file-explorer-changes:${props.resolvedTheme}`,
+    );
+    if (!renderableDiff) {
+      return <FilePreviewState>No working-tree changes for this file.</FilePreviewState>;
+    }
+
+    if (renderableDiff.kind === "raw") {
+      return (
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          <p className="mb-2 text-[11px] text-muted-foreground/75">{renderableDiff.reason}</p>
+          <pre className="whitespace-pre-wrap break-words rounded-md border border-border/70 bg-background/70 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground/90">
+            {renderableDiff.text}
+          </pre>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+        <FileDiff
+          fileDiff={renderableDiff.fileDiff}
+          options={{
+            disableFileHeader: true,
+            diffStyle: "unified",
+            lineDiffType: "none",
+            overflow: props.diffWordWrap ? "wrap" : "scroll",
+            theme: resolveDiffThemeName(props.resolvedTheme),
+            themeType: props.resolvedTheme as DiffThemeType,
+            unsafeCSS: DIFF_RENDER_UNSAFE_CSS,
+          }}
+        />
+      </div>
+    );
   }
 
   if (props.isLoading && props.readFile === undefined) {
@@ -164,14 +303,53 @@ function FilePreviewContent(props: {
     );
   }
 
+  if (props.fullFileDiff?.state === "patch") {
+    const renderableDiff = getRenderableFileDiff(
+      props.fullFileDiff.patch,
+      `file-explorer-full:${props.resolvedTheme}`,
+    );
+    if (renderableDiff?.kind === "file") {
+      return (
+        <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+          <FileDiff
+            fileDiff={renderableDiff.fileDiff}
+            options={{
+              disableFileHeader: true,
+              diffStyle: "unified",
+              lineDiffType: "none",
+              expandUnchanged: true,
+              overflow: props.diffWordWrap ? "wrap" : "scroll",
+              theme: resolveDiffThemeName(props.resolvedTheme),
+              themeType: props.resolvedTheme as DiffThemeType,
+              unsafeCSS: DIFF_RENDER_UNSAFE_CSS,
+            }}
+          />
+        </div>
+      );
+    }
+  }
+
+  const previewFile = buildPreviewFileContents(props.selectedPath, readFile);
+
   return (
-    <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[11px] leading-5 text-foreground">
-      {readFile.contents}
-    </pre>
+    <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
+      <File
+        file={previewFile}
+        options={{
+          disableFileHeader: true,
+          overflow: props.diffWordWrap ? "wrap" : "scroll",
+          theme: resolveDiffThemeName(props.resolvedTheme),
+          themeType: props.resolvedTheme as DiffThemeType,
+          unsafeCSS: DIFF_RENDER_UNSAFE_CSS,
+        }}
+      />
+    </div>
   );
 }
 
 export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanelProps) {
+  const { resolvedTheme } = useTheme();
+  const settings = useSettings();
   const routeThreadRef = useParams({
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
@@ -191,6 +369,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   const environmentId = activeThread?.environmentId ?? null;
   const projectCwd = activeProject?.cwd ?? null;
   const [selectedRelativePath, setSelectedRelativePath] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<FilePreviewMode>("contents");
   const [treePaneWidth, setTreePaneWidth] = useState(readPersistedFileTreePaneWidth);
 
   const entriesQuery = useQuery(projectListEntriesQueryOptions({ environmentId, cwd: projectCwd }));
@@ -201,6 +380,26 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
       environmentId,
       cwd: projectCwd,
       relativePath: selectedRelativePath,
+    }),
+  );
+  const selectedFileHasChanges = isPathChanged(gitStatus.data, selectedRelativePath);
+  const compactFileDiffQuery = useQuery(
+    vcsFileDiffQueryOptions({
+      environmentId,
+      cwd: projectCwd,
+      path: selectedRelativePath,
+      ignoreWhitespace: settings.diffIgnoreWhitespace,
+      contextLines: FILE_EXPLORER_DIFF_CONTEXT_LINES,
+      enabled: selectedFileHasChanges,
+    }),
+  );
+  const fullFileDiffQuery = useQuery(
+    vcsFileDiffQueryOptions({
+      environmentId,
+      cwd: projectCwd,
+      path: selectedRelativePath,
+      ignoreWhitespace: settings.diffIgnoreWhitespace,
+      enabled: selectedFileHasChanges,
     }),
   );
 
@@ -220,8 +419,10 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   } | null>(null);
   const projectCwdRef = useRef<string | null>(projectCwd);
   const entriesByTreePathRef = useRef<ReadonlyMap<string, ProjectEntry>>(entriesByTreePath);
+  const selectedRelativePathRef = useRef<string | null>(selectedRelativePath);
   projectCwdRef.current = projectCwd;
   entriesByTreePathRef.current = entriesByTreePath;
+  selectedRelativePathRef.current = selectedRelativePath;
   treePaneWidthRef.current = treePaneWidth;
 
   const openSelectedFileInEditor = useCallback(() => {
@@ -263,6 +464,41 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   useEffect(() => {
     model.setGitStatus(gitStatusEntries);
   }, [gitStatusEntries, model]);
+
+  useEffect(() => {
+    setPreviewMode(selectedFileHasChanges ? "changes" : "contents");
+  }, [selectedFileHasChanges, selectedRelativePath]);
+
+  const keybindings = useServerKeybindings();
+  const isFilesPanelOpen = useSearch({
+    strict: false,
+    select: (search) => (search as { panel?: string }).panel === "files",
+  });
+
+  useEffect(() => {
+    if (!isFilesPanelOpen) return;
+
+    const handler = (e: KeyboardEvent) => {
+      if (!isOpenFavoriteEditorShortcut(e, keybindings)) return;
+      const relativePath = selectedRelativePathRef.current;
+      const cwd = projectCwdRef.current;
+      if (!relativePath || !cwd) return;
+
+      const api = readLocalApi();
+      if (!api) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      const filePath = resolvePathLinkTarget(relativePath, cwd);
+      void openInPreferredEditor(api, cwd, filePath).catch((error) => {
+        console.warn("Failed to open previewed file in editor.", error);
+      });
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [isFilesPanelOpen, keybindings]);
 
   useEffect(() => {
     const containerWidth = splitContainerRef.current?.clientWidth;
@@ -397,8 +633,33 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
               <span className="truncate text-xs font-medium">
                 {selectedRelativePath ? fileNameOf(selectedRelativePath) : "Preview"}
               </span>
+              {selectedRelativePath && (
+                <ToggleGroup
+                  className="ml-auto shrink-0"
+                  variant="outline"
+                  size="xs"
+                  value={[previewMode]}
+                  onValueChange={(value) => {
+                    const next = value[0];
+                    if (next === "contents" || next === "changes") {
+                      setPreviewMode(next);
+                    }
+                  }}
+                >
+                  <Toggle aria-label="Show file contents" value="contents">
+                    <Code2Icon className="size-3" />
+                  </Toggle>
+                  <Toggle
+                    aria-label="Show working-tree changes"
+                    value="changes"
+                    disabled={!selectedFileHasChanges}
+                  >
+                    <GitCompareIcon className="size-3" />
+                  </Toggle>
+                </ToggleGroup>
+              )}
               {filePreviewQuery.data?.state === "text" && (
-                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">
+                <span className="shrink-0 text-[10px] text-muted-foreground/70">
                   {formatBytes(filePreviewQuery.data.sizeBytes)}
                 </span>
               )}
@@ -406,8 +667,15 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
             <FilePreviewContent
               selectedPath={selectedRelativePath}
               readFile={filePreviewQuery.data}
+              compactFileDiff={compactFileDiffQuery.data}
+              fullFileDiff={fullFileDiffQuery.data}
+              previewMode={previewMode}
               isLoading={filePreviewQuery.isLoading}
+              isCompactDiffLoading={compactFileDiffQuery.isLoading}
               error={filePreviewQuery.error}
+              compactDiffError={compactFileDiffQuery.error}
+              diffWordWrap={settings.diffWordWrap}
+              resolvedTheme={resolvedTheme}
             />
           </div>
         </div>
