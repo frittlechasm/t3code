@@ -2,7 +2,8 @@ import * as Schema from "effect/Schema";
 import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
-const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
+const PROJECT_FILE_PATH_MAX_LENGTH = 512;
+const PROJECT_READ_FILE_MAX_BYTES = 1_048_576;
 
 export const ProjectSearchEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
@@ -53,9 +54,54 @@ export class ProjectListEntriesError extends Schema.TaggedErrorClass<ProjectList
   },
 ) {}
 
+export const ProjectReadFileInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_FILE_PATH_MAX_LENGTH)),
+  maxBytes: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_READ_FILE_MAX_BYTES)),
+  ),
+});
+export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
+
+const ProjectReadFileBaseResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+  sizeBytes: Schema.Number,
+});
+
+export const ProjectReadFileResult = Schema.Union([
+  Schema.Struct({
+    ...ProjectReadFileBaseResult.fields,
+    state: Schema.Literal("text"),
+    contents: Schema.String,
+  }),
+  Schema.Struct({
+    ...ProjectReadFileBaseResult.fields,
+    state: Schema.Literal("binary"),
+  }),
+  Schema.Struct({
+    ...ProjectReadFileBaseResult.fields,
+    state: Schema.Literal("too_large"),
+    maxBytes: PositiveInt,
+  }),
+  Schema.Struct({
+    relativePath: TrimmedNonEmptyString,
+    sizeBytes: Schema.Literal(0),
+    state: Schema.Literal("missing"),
+  }),
+]);
+export type ProjectReadFileResult = typeof ProjectReadFileResult.Type;
+
+export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFileError>()(
+  "ProjectReadFileError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
-  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_FILE_PATH_MAX_LENGTH)),
   contents: Schema.String,
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;

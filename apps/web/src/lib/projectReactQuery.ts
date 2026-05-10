@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ProjectListEntriesResult,
+  ProjectReadFileResult,
   ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
 import { queryOptions } from "@tanstack/react-query";
@@ -10,6 +11,12 @@ export const projectQueryKeys = {
   all: ["projects"] as const,
   listEntries: (environmentId: EnvironmentId | null, cwd: string | null) =>
     ["projects", "list-entries", environmentId ?? null, cwd] as const,
+  readFile: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    relativePath: string | null,
+    maxBytes: number,
+  ) => ["projects", "read-file", environmentId ?? null, cwd, relativePath, maxBytes] as const,
   searchEntries: (
     environmentId: EnvironmentId | null,
     cwd: string | null,
@@ -19,6 +26,7 @@ export const projectQueryKeys = {
 };
 
 const DEFAULT_LIST_ENTRIES_STALE_TIME = 15_000;
+const DEFAULT_READ_FILE_MAX_BYTES = 256 * 1024;
 const EMPTY_LIST_ENTRIES_RESULT: ProjectListEntriesResult = {
   entries: [],
   truncated: false,
@@ -42,6 +50,42 @@ export function projectListEntriesQueryOptions(input: {
     enabled: (input.enabled ?? true) && input.environmentId !== null && input.cwd !== null,
     staleTime: input.staleTime ?? DEFAULT_LIST_ENTRIES_STALE_TIME,
     placeholderData: (previous) => previous ?? EMPTY_LIST_ENTRIES_RESULT,
+  });
+}
+
+export function projectReadFileQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  cwd: string | null;
+  relativePath: string | null;
+  enabled?: boolean;
+  maxBytes?: number;
+  staleTime?: number;
+}) {
+  const maxBytes = input.maxBytes ?? DEFAULT_READ_FILE_MAX_BYTES;
+  return queryOptions<ProjectReadFileResult>({
+    queryKey: projectQueryKeys.readFile(
+      input.environmentId,
+      input.cwd,
+      input.relativePath,
+      maxBytes,
+    ),
+    queryFn: async () => {
+      if (!input.cwd || !input.environmentId || !input.relativePath) {
+        throw new Error("Workspace file preview is unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.projects.readFile({
+        cwd: input.cwd,
+        relativePath: input.relativePath,
+        maxBytes,
+      });
+    },
+    enabled:
+      (input.enabled ?? true) &&
+      input.environmentId !== null &&
+      input.cwd !== null &&
+      input.relativePath !== null,
+    staleTime: input.staleTime ?? DEFAULT_LIST_ENTRIES_STALE_TIME,
   });
 }
 
