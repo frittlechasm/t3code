@@ -1911,6 +1911,11 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
   );
+  const fileExplorerShortcutLabel = useMemo(
+    () =>
+      shortcutLabelForCommand(keybindings, "fileExplorer.toggle", nonTerminalShortcutLabelOptions),
+    [keybindings, nonTerminalShortcutLabelOptions],
+  );
   const onToggleDiff = useCallback(() => {
     if (!isServerThread) {
       return;
@@ -3818,14 +3823,17 @@ export default function ChatView(props: ChatViewProps) {
           terminalOpen={terminalUiState.terminalOpen}
           terminalToggleShortcutLabel={terminalToggleShortcutLabel}
           diffToggleShortcutLabel={diffPanelShortcutLabel}
+          fileExplorerToggleShortcutLabel={fileExplorerShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
+          filesOpen={filesOpen}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
+          onToggleFiles={onToggleFiles}
         />
       </header>
 

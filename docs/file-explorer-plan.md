@@ -255,6 +255,97 @@ Focused test areas still needed:
 - Preview reads must be size-bounded and should avoid loading binary files into React state.
 - Git status decorations are advisory UI state. Missing or stale git status must not block tree rendering.
 
+### Milestone 10 — Search focus shortcut (`mod+/`) (✅ done)
+
+Add `Cmd+/` (macOS) / `Ctrl+/` (other platforms) to focus the file tree search box when the explorer is open.
+
+#### Current state
+
+- The `@pierre/trees` model exposes `model.openSearch(initialValue?)` which opens and focuses the search input programmatically.
+- `useFileTree({ search: true })` is already configured at `FileExplorerPanel.tsx:444`.
+- The file tree model is available as `model` from `useFileTree()` at line 440.
+- The panel-open check (`isFilesPanelOpen`) already exists at line 473.
+
+#### Changes
+
+1. **`packages/contracts/src/keybindings.ts`** — Add `"fileExplorer.focusSearch"` to `STATIC_KEYBINDING_COMMANDS`.
+2. **`packages/shared/src/keybindings.ts`** — Add default binding: `{ key: "mod+/", command: "fileExplorer.focusSearch", when: "!terminalFocus" }`.
+3. **`apps/web/src/keybindings.ts`** — Add helper `isFileExplorerFocusSearchShortcut(e, keybindings)` following the same pattern as `isFileExplorerToggleShortcut` (line 382).
+4. **`apps/web/src/components/FileExplorerPanel.tsx`** — Add a capture-phase `keydown` listener (guarded by `isFilesPanelOpen`) that calls `model.openSearch()` when the shortcut matches. Pattern follows the existing `mod+o` handler at lines 478–501.
+
+#### Behavior
+
+- When the file explorer panel is open and the shortcut fires, the search input opens and receives focus.
+- When the panel is closed, the shortcut is a no-op (falls through to any other handlers).
+- If search is already open, calling `model.openSearch()` should re-focus the existing input (verify with `@pierre/trees` behavior; if it toggles instead, use `model.isSearchOpen()` to guard).
+
+### Milestone 11 — Fix "Open in editor" button to match `mod+o` logic (✅ done)
+
+The header "Open in editor" button (`ExternalLinkIcon`) currently calls `openInPreferredEditor` differently from the `mod+o` shortcut handler, which can produce different editor behavior.
+
+#### Current state
+
+- **Button** (`openSelectedFileInEditor`, line 428–438): calls `openInPreferredEditor(api, targetPath)` where `targetPath` is the resolved absolute file path. This opens the file directly without project context.
+- **`mod+o` shortcut** (lines 478–501): calls `openInPreferredEditor(api, cwd, filePath)` where `cwd` is the project root and `filePath` is the resolved absolute path. This opens the project in the editor first, then navigates to the file within it.
+- The `openInPreferredEditor` signature is `(api: LocalApi, targetPath: string, filePath?: string)`. When `filePath` is omitted, `api.shell.openInEditor(targetPath, editor)` is called with just the path. When provided, `api.shell.openInEditor(targetPath, editor, filePath)` passes the project root as the target and the file as the specific file to open within it.
+
+#### Changes
+
+1. **`apps/web/src/components/FileExplorerPanel.tsx`** — Update `openSelectedFileInEditor` (line 428) to pass `cwd` as the first argument and the resolved file path as the second, matching the `mod+o` handler:
+   ```typescript
+   const openSelectedFileInEditor = useCallback(() => {
+     const cwd = projectCwdRef.current;
+     const relativePath = selectedRelativePath;
+     if (!cwd || !relativePath) return;
+     const api = readLocalApi();
+     if (!api) return;
+     const filePath = resolvePathLinkTarget(relativePath, cwd);
+     void openInPreferredEditor(api, cwd, filePath).catch((error) => {
+       console.warn("Failed to open file explorer entry in editor.", error);
+     });
+   }, [selectedRelativePath]);
+   ```
+
+This is a one-line change: `openInPreferredEditor(api, targetPath)` → `openInPreferredEditor(api, cwd, filePath)` (with the variable renamed for clarity).
+
+### Milestone 12 — Preview line-wrap toggle (✅ done)
+
+Add a `TextWrapIcon` toggle button in the file explorer preview header, next to the existing code/git toggle group, for controlling line wrapping in the preview pane.
+
+#### Current state
+
+- `FilePreviewContent` already accepts `diffWordWrap: boolean` and applies it to all three rendering paths: compact diff (line 266), full-file diff (line 321), and plain file contents (line 340).
+- The value currently comes from `settings.diffWordWrap` (line 677), the global user setting. There is no local override in the file explorer panel.
+- `DiffPanel.tsx` already implements this pattern: it has local state `diffWordWrap` initialized from `settings.diffWordWrap` (line 144) with a standalone `Toggle` using `TextWrapIcon` (lines 542–553).
+
+#### Changes
+
+1. **`apps/web/src/components/FileExplorerPanel.tsx`** — In `FileExplorerPanel` (the outer component, line 350):
+   - Import `TextWrapIcon` from `lucide-react` (add to existing import on line 14).
+   - Add local state: `const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);`.
+   - Reset local state when the panel opens (matching `DiffPanel.tsx` pattern at lines 305–311).
+   - Pass local `diffWordWrap` instead of `settings.diffWordWrap` to `FilePreviewContent` (line 677).
+
+2. **Preview header UI** (lines 636–660) — Add a standalone `Toggle` button after the `ToggleGroup`, before the file-size display. Placement: between the code/git toggle group and the byte-size label, visually separated. Only show when a file is selected (`selectedRelativePath` is truthy):
+   ```tsx
+   <Toggle
+     aria-label={diffWordWrap ? "Disable line wrapping" : "Enable line wrapping"}
+     variant="outline"
+     size="xs"
+     pressed={diffWordWrap}
+     onPressedChange={(pressed) => setDiffWordWrap(Boolean(pressed))}
+   >
+     <TextWrapIcon className="size-3" />
+   </Toggle>
+   ```
+
+#### Behavior
+
+- Toggle is visible whenever a file is selected, regardless of whether the preview is in "contents" or "changes" mode (wrapping applies to both).
+- Initial state comes from the global `settings.diffWordWrap` preference.
+- Toggling is local to the current panel session — it does not persist to settings. This matches the `DiffPanel` behavior.
+- When the panel is re-opened, the toggle resets to the global setting value.
+
 ## Milestones Summary
 
 1. ✅ Right-panel route state and shared panel shell
@@ -267,3 +358,6 @@ Focused test areas still needed:
 8. ✅ Selected-file working-tree changes
    8.5. ✅ Open previewed file with `mod+o`
 9. Tests and final validation
+10. ✅ Search focus shortcut (`mod+/`)
+11. ✅ Fix "Open in editor" button to match `mod+o` logic
+12. ✅ Preview line-wrap toggle
