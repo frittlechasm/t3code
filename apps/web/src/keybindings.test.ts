@@ -11,6 +11,7 @@ import {
   isChatNewShortcut,
   isChatNewLocalShortcut,
   isDiffToggleShortcut,
+  isFileExplorerToggleTreeShortcut,
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
   isOpenFavoriteEditorShortcut,
@@ -103,6 +104,11 @@ const DEFAULT_BINDINGS = compile([
   {
     shortcut: modShortcut("d"),
     command: "diff.toggle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
+    shortcut: modShortcut("y", { shiftKey: true }),
+    command: "fileExplorer.toggleTree",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
@@ -490,6 +496,29 @@ describe("chat/editor shortcuts", () => {
         platform: "MacIntel",
         context: { terminalFocus: true },
       }),
+    );
+  });
+
+  it("matches fileExplorer.toggleTree shortcut outside terminal focus", () => {
+    assert.isTrue(
+      isFileExplorerToggleTreeShortcut(
+        event({ key: "y", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: false },
+        },
+      ),
+    );
+    assert.isFalse(
+      isFileExplorerToggleTreeShortcut(
+        event({ key: "y", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: true },
+        },
+      ),
     );
   });
 });

@@ -387,6 +387,14 @@ export function isFileExplorerToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "fileExplorer.toggle", options);
 }
 
+export function isFileExplorerToggleTreeShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "fileExplorer.toggleTree", options);
+}
+
 export function isFileExplorerFocusSearchShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,

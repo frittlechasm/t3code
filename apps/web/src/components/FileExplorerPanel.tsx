@@ -11,7 +11,14 @@ import type {
   VcsStatusResult,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Code2Icon, ExternalLinkIcon, GitCompareIcon, TextWrapIcon } from "lucide-react";
+import {
+  Code2Icon,
+  ExternalLinkIcon,
+  GitCompareIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  TextWrapIcon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,7 +32,12 @@ import {
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { useSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "~/rpc/serverState";
-import { isFileExplorerFocusSearchShortcut, isOpenFavoriteEditorShortcut } from "../keybindings";
+import {
+  isFileExplorerFocusSearchShortcut,
+  isFileExplorerToggleTreeShortcut,
+  isOpenFavoriteEditorShortcut,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import { useTheme } from "~/hooks/useTheme";
 import {
   DIFF_RENDER_UNSAFE_CSS,
@@ -40,6 +52,7 @@ import {
 } from "~/lib/projectReactQuery";
 import { openInPreferredEditor } from "../editorPreferences";
 import { readLocalApi } from "../localApi";
+import { isMacPlatform } from "../lib/utils";
 import { selectProjectByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolvePathLinkTarget } from "../terminal-links";
@@ -55,6 +68,7 @@ const EMPTY_PROJECT_ENTRIES: readonly ProjectEntry[] = [];
 const EMPTY_GIT_STATUS_ENTRIES: readonly GitStatusEntry[] = [];
 const FILE_EXPLORER_DIFF_CONTEXT_LINES = 8;
 const FILE_TREE_PANE_WIDTH_STORAGE_KEY = "chat_file_explorer_tree_width";
+const FILE_TREE_PANE_VISIBLE_STORAGE_KEY = "chat_file_explorer_tree_visible";
 const FILE_TREE_PANE_DEFAULT_WIDTH = 220;
 const FILE_TREE_PANE_MIN_WIDTH = 180;
 const FILE_TREE_PANE_MAX_WIDTH = 420;
@@ -88,6 +102,39 @@ function readPersistedFileTreePaneWidth(): number {
     console.warn("Failed to read persisted file explorer tree width.", error);
     return FILE_TREE_PANE_DEFAULT_WIDTH;
   }
+}
+
+function readPersistedFileTreePaneVisible(): boolean {
+  try {
+    return getLocalStorageItem(FILE_TREE_PANE_VISIBLE_STORAGE_KEY, Schema.Boolean) ?? true;
+  } catch (error) {
+    console.warn("Failed to read persisted file explorer tree visibility.", error);
+    return true;
+  }
+}
+
+function isDefaultFileExplorerToggleTreeShortcut(event: KeyboardEvent): boolean {
+  const useMetaForMod = isMacPlatform(navigator.platform);
+  const expectedMeta = useMetaForMod;
+  const expectedCtrl = !useMetaForMod;
+  return (
+    event.key.toLowerCase() === "y" &&
+    event.metaKey === expectedMeta &&
+    event.ctrlKey === expectedCtrl &&
+    event.shiftKey &&
+    !event.altKey
+  );
+}
+
+function defaultFileExplorerToggleTreeShortcutLabel(): string {
+  return isMacPlatform(navigator.platform) ? "\u21e7\u2318Y" : "Ctrl+Shift+Y";
+}
+
+function resolveToggleTreeShortcutLabel(label: string | null): string {
+  if (label === "\u2325\u2318E" || label === "Ctrl+Alt+E") {
+    return defaultFileExplorerToggleTreeShortcutLabel();
+  }
+  return label ?? defaultFileExplorerToggleTreeShortcutLabel();
 }
 
 function directoriesFirstSort(left: FileTreeSortEntry, right: FileTreeSortEntry): number {
@@ -208,9 +255,14 @@ function FilePreviewContent(props: {
   compactDiffError: unknown;
   diffWordWrap: boolean;
   resolvedTheme: "light" | "dark";
+  emptySelectionMessage?: string;
 }) {
   if (!props.selectedPath) {
-    return <FilePreviewState>Select a file to preview.</FilePreviewState>;
+    return (
+      <FilePreviewState>
+        {props.emptySelectionMessage ?? "Select a file to preview."}
+      </FilePreviewState>
+    );
   }
 
   if (props.previewMode === "changes") {
@@ -372,6 +424,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   const [previewMode, setPreviewMode] = useState<FilePreviewMode>("contents");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
   const [treePaneWidth, setTreePaneWidth] = useState(readPersistedFileTreePaneWidth);
+  const [treePaneVisible, setTreePaneVisible] = useState(readPersistedFileTreePaneVisible);
 
   const entriesQuery = useQuery(projectListEntriesQueryOptions({ environmentId, cwd: projectCwd }));
   const entries = entriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
@@ -471,6 +524,12 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   }, [selectedFileHasChanges, selectedRelativePath]);
 
   const keybindings = useServerKeybindings();
+  const toggleTreeShortcutLabel = useMemo(() => {
+    const label = shortcutLabelForCommand(keybindings, "fileExplorer.toggleTree", {
+      context: { terminalFocus: false },
+    });
+    return resolveToggleTreeShortcutLabel(label);
+  }, [keybindings]);
   const isFilesPanelOpen = useSearch({
     strict: false,
     select: (search) => (search as { panel?: string }).panel === "files",
@@ -513,9 +572,33 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     if (!isFilesPanelOpen) return;
 
     const handler = (e: KeyboardEvent) => {
+      if (
+        isFileExplorerToggleTreeShortcut(e, keybindings) ||
+        isDefaultFileExplorerToggleTreeShortcut(e)
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setTreePaneVisible((visible) => {
+          const nextVisible = !visible;
+          try {
+            setLocalStorageItem(FILE_TREE_PANE_VISIBLE_STORAGE_KEY, nextVisible, Schema.Boolean);
+          } catch (error) {
+            console.warn("Failed to persist file explorer tree visibility.", error);
+          }
+          return nextVisible;
+        });
+        return;
+      }
+
       if (!isFileExplorerFocusSearchShortcut(e, keybindings)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      setTreePaneVisible(true);
+      try {
+        setLocalStorageItem(FILE_TREE_PANE_VISIBLE_STORAGE_KEY, true, Schema.Boolean);
+      } catch (error) {
+        console.warn("Failed to persist file explorer tree visibility.", error);
+      }
       if (!model.isSearchOpen()) {
         model.openSearch();
       }
@@ -540,6 +623,22 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
       console.warn("Failed to persist file explorer tree width.", error);
     }
   }, []);
+
+  const persistTreePaneVisible = useCallback((visible: boolean) => {
+    try {
+      setLocalStorageItem(FILE_TREE_PANE_VISIBLE_STORAGE_KEY, visible, Schema.Boolean);
+    } catch (error) {
+      console.warn("Failed to persist file explorer tree visibility.", error);
+    }
+  }, []);
+
+  const handleToggleTreePane = useCallback(() => {
+    setTreePaneVisible((visible) => {
+      const nextVisible = !visible;
+      persistTreePaneVisible(nextVisible);
+      return nextVisible;
+    });
+  }, [persistTreePaneVisible]);
 
   const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -589,24 +688,49 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
           <span className="shrink-0 text-[10px] text-muted-foreground/70">(truncated)</span>
         )}
       </div>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              aria-label="Open selected file in editor"
-              disabled={!selectedRelativePath}
-              onClick={openSelectedFileInEditor}
-              size="icon-xs"
-              variant="ghost"
-            >
-              <ExternalLinkIcon className="size-3.5" aria-hidden />
-            </Button>
-          }
-        />
-        <TooltipPopup side="bottom" align="end">
-          Open in editor
-        </TooltipPopup>
-      </Tooltip>
+      <div className="flex shrink-0 items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label="Open selected file in editor"
+                disabled={!selectedRelativePath}
+                onClick={openSelectedFileInEditor}
+                size="icon-xs"
+                variant="ghost"
+              >
+                <ExternalLinkIcon className="size-3.5" aria-hidden />
+              </Button>
+            }
+          />
+          <TooltipPopup side="bottom" align="end">
+            Open in editor
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label={treePaneVisible ? "Hide file tree" : "Show file tree"}
+                aria-pressed={treePaneVisible}
+                onClick={handleToggleTreePane}
+                size="icon-xs"
+                variant="ghost"
+              >
+                {treePaneVisible ? (
+                  <PanelLeftCloseIcon className="size-3.5" aria-hidden />
+                ) : (
+                  <PanelLeftOpenIcon className="size-3.5" aria-hidden />
+                )}
+              </Button>
+            }
+          />
+          <TooltipPopup side="bottom" align="end">
+            {treePaneVisible ? "Hide file tree" : "Show file tree"}
+            {toggleTreeShortcutLabel ? ` (${toggleTreeShortcutLabel})` : ""}
+          </TooltipPopup>
+        </Tooltip>
+      </div>
     </>
   );
 
@@ -624,36 +748,46 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
         </div>
       ) : (
         <div ref={splitContainerRef} className="flex min-h-0 flex-1 overflow-hidden">
+          {treePaneVisible ? (
+            <>
+              <div
+                className="min-h-0 shrink-0 overflow-hidden"
+                style={
+                  {
+                    width: `${treePaneWidth}px`,
+                    "--trees-bg-override": "var(--background)",
+                    "--trees-fg-override": "var(--foreground)",
+                    "--trees-fg-muted-override": "var(--muted-foreground)",
+                    "--trees-accent-override": "var(--accent)",
+                    "--trees-border-color-override": "var(--border)",
+                    "--trees-selected-bg-override": "var(--accent)",
+                    "--trees-selected-fg-override": "var(--accent-foreground)",
+                  } as CSSProperties
+                }
+              >
+                <FileTreeComponent model={model} style={{ height: "100%", display: "block" }} />
+              </div>
+              <div
+                aria-label="Resize file tree"
+                role="separator"
+                aria-orientation="vertical"
+                className="group relative z-10 w-1 shrink-0 cursor-col-resize bg-border/60 transition-colors hover:bg-border"
+                onPointerDown={handleResizePointerDown}
+                onPointerMove={handleResizePointerMove}
+                onPointerUp={handleResizePointerEnd}
+                onPointerCancel={handleResizePointerEnd}
+              >
+                <div className="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2" />
+              </div>
+            </>
+          ) : null}
           <div
-            className="min-h-0 shrink-0 overflow-hidden"
-            style={
-              {
-                width: `${treePaneWidth}px`,
-                "--trees-bg-override": "var(--background)",
-                "--trees-fg-override": "var(--foreground)",
-                "--trees-fg-muted-override": "var(--muted-foreground)",
-                "--trees-accent-override": "var(--accent)",
-                "--trees-border-color-override": "var(--border)",
-                "--trees-selected-bg-override": "var(--accent)",
-                "--trees-selected-fg-override": "var(--accent-foreground)",
-              } as CSSProperties
+            className={
+              treePaneVisible
+                ? "flex min-w-0 flex-1 flex-col border-l border-border/60"
+                : "flex min-w-0 flex-1 flex-col"
             }
           >
-            <FileTreeComponent model={model} style={{ height: "100%", display: "block" }} />
-          </div>
-          <div
-            aria-label="Resize file tree"
-            role="separator"
-            aria-orientation="vertical"
-            className="group relative z-10 w-1 shrink-0 cursor-col-resize bg-border/60 transition-colors hover:bg-border"
-            onPointerDown={handleResizePointerDown}
-            onPointerMove={handleResizePointerMove}
-            onPointerUp={handleResizePointerEnd}
-            onPointerCancel={handleResizePointerEnd}
-          >
-            <div className="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2" />
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col border-l border-border/60">
             <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/50 px-3">
               <span className="truncate text-xs font-medium">
                 {selectedRelativePath ? fileNameOf(selectedRelativePath) : "Preview"}
@@ -712,6 +846,9 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
               compactDiffError={compactFileDiffQuery.error}
               diffWordWrap={diffWordWrap}
               resolvedTheme={resolvedTheme}
+              {...(!treePaneVisible
+                ? { emptySelectionMessage: "Show the file tree to select a file." }
+                : {})}
             />
           </div>
         </div>
