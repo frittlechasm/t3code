@@ -35,6 +35,7 @@ import { useSettings } from "~/hooks/useSettings";
 import {
   closeFileExplorerTab,
   fileExplorerTabDirectionFromShortcut,
+  isFileExplorerCloseTabShortcut,
   openFileExplorerTab,
   selectAdjacentFileExplorerTab,
 } from "~/fileExplorerTabs";
@@ -64,6 +65,7 @@ import { selectProjectByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolvePathLinkTarget } from "../terminal-links";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { WINDOW_CLOSE_REQUEST_EVENT } from "../windowCloseRequests";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -87,6 +89,16 @@ type DiffThemeType = "light" | "dark";
 type RenderableFileDiff =
   | { kind: "file"; fileDiff: FileDiffMetadata }
   | { kind: "raw"; text: string; reason: string };
+
+function isTextInputFocusTarget(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+  return (
+    element.tagName === "INPUT" ||
+    element.tagName === "TEXTAREA" ||
+    element.tagName === "SELECT" ||
+    element.isContentEditable
+  );
+}
 
 function clampFileTreePaneWidth(width: number, containerWidth?: number): number {
   const maxWidth =
@@ -473,6 +485,8 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   );
   const truncated = entriesQuery.data?.truncated ?? false;
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const previewPaneRef = useRef<HTMLDivElement | null>(null);
+  const lastPreviewKeyboardCloseAtRef = useRef(0);
   const treePaneWidthRef = useRef(treePaneWidth);
   const resizeStateRef = useRef<{
     pointerId: number;
@@ -488,6 +502,15 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   activeFilePathRef.current = activeFilePath;
   openFileTabsRef.current = openFileTabs;
   treePaneWidthRef.current = treePaneWidth;
+
+  const focusPreviewPaneSoon = useCallback((options?: { preserveTextInputFocus?: boolean }) => {
+    window.requestAnimationFrame(() => {
+      if (options?.preserveTextInputFocus && isTextInputFocusTarget(document.activeElement)) {
+        return;
+      }
+      previewPaneRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
 
   const openSelectedFileInEditor = useCallback(() => {
     const cwd = projectCwdRef.current;
@@ -520,6 +543,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
       const next = openFileExplorerTab(openFileTabsRef.current, entry.path);
       setOpenFileTabs(next.tabs);
       setActiveFilePath(next.activePath);
+      focusPreviewPaneSoon({ preserveTextInputFocus: true });
     },
   });
 
@@ -611,6 +635,56 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   useEffect(() => {
     if (!isFilesPanelOpen) return;
 
+    const closeActivePreviewTab = (): boolean => {
+      const activeElement = document.activeElement;
+      const previewPane = previewPaneRef.current;
+      if (
+        !previewPane ||
+        !(activeElement instanceof Node) ||
+        !previewPane.contains(activeElement)
+      ) {
+        return false;
+      }
+
+      const activePath = activeFilePathRef.current;
+      if (!activePath) return false;
+
+      const next = closeFileExplorerTab(openFileTabsRef.current, activePath, activePath);
+      setOpenFileTabs(next.tabs);
+      setActiveFilePath(next.activePath);
+      focusPreviewPaneSoon();
+      return true;
+    };
+
+    const handler = (e: KeyboardEvent) => {
+      if (!isFileExplorerCloseTabShortcut(e)) return;
+      if (!closeActivePreviewTab()) return;
+
+      lastPreviewKeyboardCloseAtRef.current = performance.now();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+
+    const closeRequestHandler = (event: Event) => {
+      if (performance.now() - lastPreviewKeyboardCloseAtRef.current < 250) {
+        event.preventDefault();
+        return;
+      }
+      if (!closeActivePreviewTab()) return;
+      event.preventDefault();
+    };
+
+    window.addEventListener("keydown", handler, true);
+    window.addEventListener(WINDOW_CLOSE_REQUEST_EVENT, closeRequestHandler);
+    return () => {
+      window.removeEventListener("keydown", handler, true);
+      window.removeEventListener(WINDOW_CLOSE_REQUEST_EVENT, closeRequestHandler);
+    };
+  }, [focusPreviewPaneSoon, isFilesPanelOpen]);
+
+  useEffect(() => {
+    if (!isFilesPanelOpen) return;
+
     const handler = (e: KeyboardEvent) => {
       if (
         isFileExplorerToggleTreeShortcut(e, keybindings) ||
@@ -680,10 +754,33 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     });
   }, [persistTreePaneVisible]);
 
-  const handleCloseFileTab = useCallback((path: string) => {
-    const next = closeFileExplorerTab(openFileTabsRef.current, activeFilePathRef.current, path);
-    setOpenFileTabs(next.tabs);
-    setActiveFilePath(next.activePath);
+  const handleCloseFileTab = useCallback(
+    (path: string) => {
+      const next = closeFileExplorerTab(openFileTabsRef.current, activeFilePathRef.current, path);
+      setOpenFileTabs(next.tabs);
+      setActiveFilePath(next.activePath);
+      focusPreviewPaneSoon();
+    },
+    [focusPreviewPaneSoon],
+  );
+
+  const handleSelectFileTab = useCallback(
+    (path: string) => {
+      setActiveFilePath(path);
+      focusPreviewPaneSoon();
+    },
+    [focusPreviewPaneSoon],
+  );
+
+  const handlePreviewPanePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      target.closest("button, input, textarea, select, [contenteditable='true'], a[href]")
+    ) {
+      return;
+    }
+    event.currentTarget.focus({ preventScroll: true });
   }, []);
 
   const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -828,10 +925,14 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
             </>
           ) : null}
           <div
+            ref={previewPaneRef}
+            tabIndex={0}
+            aria-label="File preview"
+            onPointerDown={handlePreviewPanePointerDown}
             className={
               treePaneVisible
-                ? "flex min-w-0 flex-1 flex-col border-l border-border/60"
-                : "flex min-w-0 flex-1 flex-col"
+                ? "flex min-w-0 flex-1 flex-col border-l border-border/60 outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
+                : "flex min-w-0 flex-1 flex-col outline-none focus-visible:ring-1 focus-visible:ring-ring/60"
             }
           >
             <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/50 px-2">
@@ -864,7 +965,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
                           aria-selected={active}
                           title={path}
                           className="min-w-0 flex-1 truncate px-2 text-left text-xs font-medium"
-                          onClick={() => setActiveFilePath(path)}
+                          onClick={() => handleSelectFileTab(path)}
                         >
                           {fileNameOf(path)}
                         </button>
