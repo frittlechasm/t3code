@@ -20,6 +20,7 @@ import {
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
+  type TerminalViewMode,
 } from "@t3tools/contracts";
 import {
   parseScopedThreadKey,
@@ -437,6 +438,7 @@ interface PersistentThreadTerminalDrawerProps {
   threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
   threadId: ThreadId;
   visible: boolean;
+  viewMode?: TerminalViewMode | undefined;
   launchContext: PersistentTerminalLaunchContext | null;
   focusRequestId: number;
   splitShortcutLabel: string | undefined;
@@ -450,6 +452,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   threadRef,
   threadId,
   visible,
+  viewMode,
   launchContext,
   focusRequestId,
   splitShortcutLabel,
@@ -589,6 +592,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         runtimeEnv={runtimeEnv}
         visible={visible}
         height={terminalState.terminalHeight}
+        viewMode={viewMode}
         terminalIds={terminalState.terminalIds}
         activeTerminalId={terminalState.activeTerminalId}
         terminalGroups={terminalState.terminalGroups}
@@ -641,6 +645,7 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
+  const terminalViewMode = settings.terminalViewMode;
   const autoOpenPlanSidebar = settings.autoOpenPlanSidebar;
   const navigate = useNavigate();
   const rawSearch = useSearch({
@@ -1862,6 +1867,28 @@ export default function ChatView(props: ChatViewProps) {
       terminalState.terminalOpen,
     ],
   );
+  const cycleSplitFocus = useCallback(() => {
+    if (!activeThreadRef || !terminalState.terminalOpen) return;
+    const activeGroup = terminalState.terminalGroups.find(
+      (g) =>
+        g.id === terminalState.activeTerminalGroupId ||
+        g.terminalIds.includes(terminalState.activeTerminalId),
+    );
+    if (!activeGroup || activeGroup.terminalIds.length <= 1) return;
+    const currentIndex = activeGroup.terminalIds.indexOf(terminalState.activeTerminalId);
+    const nextIndex = (currentIndex + 1) % activeGroup.terminalIds.length;
+    const nextTerminalId = activeGroup.terminalIds[nextIndex];
+    if (!nextTerminalId) return;
+    storeSetActiveTerminal(activeThreadRef, nextTerminalId);
+    setTerminalFocusRequestId((value) => value + 1);
+  }, [
+    activeThreadRef,
+    storeSetActiveTerminal,
+    terminalState.activeTerminalGroupId,
+    terminalState.activeTerminalId,
+    terminalState.terminalGroups,
+    terminalState.terminalOpen,
+  ]);
   const closeTerminal = useCallback(
     (terminalId: string) => {
       const api = readEnvironmentApi(environmentId);
@@ -2582,6 +2609,13 @@ export default function ChatView(props: ChatViewProps) {
       event.preventDefault();
       event.stopPropagation();
       cycleTerminalTab(terminalAction === "tabPrevious" ? "previous" : "next");
+      return;
+    }
+
+    if (terminalAction === "splitFocusNext") {
+      event.preventDefault();
+      event.stopPropagation();
+      cycleSplitFocus();
       return;
     }
 
@@ -3812,6 +3846,7 @@ export default function ChatView(props: ChatViewProps) {
           threadRef={mountedThreadRef}
           threadId={mountedThreadRef.threadId}
           visible={mountedThreadKey === activeThreadKey && terminalState.terminalOpen}
+          viewMode={terminalViewMode}
           launchContext={
             mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
           }

@@ -51,6 +51,9 @@ Invalid rules are ignored. Invalid config files are ignored. Warnings are logged
 - `terminal.split`: split terminal (in focused terminal context by default)
 - `terminal.new`: create new terminal (in focused terminal context by default)
 - `terminal.close`: close/kill the focused terminal (in focused terminal context by default)
+- `terminal.tabPrevious`: switch to the previous terminal tab/group
+- `terminal.tabNext`: switch to the next terminal tab/group
+- `terminal.splitFocusNext`: cycle focus to the next split terminal in the current group
 - `commandPalette.toggle`: open or close the global command palette
 - `chat.new`: create a new chat thread preserving the active thread's branch/worktree state
 - `chat.newLocal`: create a new chat thread for the active project in a new environment (local/worktree determined by app settings (default `local`))

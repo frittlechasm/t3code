@@ -424,6 +424,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
+      ...(settings.terminalViewMode !== DEFAULT_UNIFIED_SETTINGS.terminalViewMode
+        ? ["Terminal view mode"]
+        : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
     ],
     [
@@ -438,6 +441,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
       settings.sidebarThreadPreviewCount,
+      settings.terminalViewMode,
       settings.timestampFormat,
       theme,
     ],
@@ -466,6 +470,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+      terminalViewMode: DEFAULT_UNIFIED_SETTINGS.terminalViewMode,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
     });
     onRestored?.();
@@ -692,6 +697,47 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Open the task panel automatically"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Terminal view"
+          description="Choose how multiple terminals are organized in the drawer."
+          resetAction={
+            settings.terminalViewMode !== DEFAULT_UNIFIED_SETTINGS.terminalViewMode ? (
+              <SettingResetButton
+                label="terminal view"
+                onClick={() =>
+                  updateSettings({
+                    terminalViewMode: DEFAULT_UNIFIED_SETTINGS.terminalViewMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.terminalViewMode}
+              onValueChange={(value) => {
+                if (value === "sidebar" || value === "tabs") {
+                  updateSettings({ terminalViewMode: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Terminal view mode">
+                <SelectValue>
+                  {settings.terminalViewMode === "tabs" ? "Tabs" : "Sidebar"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="sidebar">
+                  Sidebar
+                </SelectItem>
+                <SelectItem hideIndicator value="tabs">
+                  Tabs
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 
