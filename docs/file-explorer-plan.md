@@ -68,11 +68,15 @@ Panel width storage keys:
 
 - Reads active project via `useParams` + store selectors, then uses the project `cwd` as the stable explorer root.
 - Fetches entries with `useQuery(projectListEntriesQueryOptions({ environmentId, cwd }))`.
+- Reuses the existing `useGitStatus({ environmentId, cwd })` subscription for working-tree decorations; no additional polling loop.
+- Tracks a client-local selected file path and fetches bounded previews with `projectReadFileQueryOptions({ environmentId, cwd, relativePath })`.
 - Converts `ProjectEntry[]` to `@pierre/trees` path strings: directories get a trailing `/`.
 - Builds a `FileTree` model once via `useFileTree`; calls `model.resetPaths(paths)` in `useEffect` on entry changes.
-- `useFileTree` options: `flattenEmptyDirectories: true`, `initialExpansion: 1`, `search: true`, `dragAndDrop: false`, `renaming: false`, custom `sort` (directories before files, then locale-numeric basename order).
+- Maps current working-tree changed-file paths to `GitStatusEntry[]` and calls `model.setGitStatus(gitStatusEntries)` when status updates.
+- `useFileTree` options: `flattenEmptyDirectories: true`, `initialExpansion: 0`, `search: true`, `dragAndDrop: false`, `renaming: false`, custom `sort` (directories before files, then locale-numeric basename order).
 - Themes the shadow-DOM tree via CSS custom properties (`--trees-*-override`) on the wrapper `div`.
-- Renders four states: loading skeleton (`DiffPanelLoadingState`), no-workspace message, empty-workspace message, and the live tree.
+- Renders panel states for loading, no workspace, empty workspace, and the live tree plus preview states for no selection, loading, text, binary, too-large, missing, and error.
+- Keeps the file tree column compact by default, with a persisted resize handle so the adjacent preview pane gets the remaining panel width unless the user expands the tree.
 - Lazy-loaded via `LazyFileExplorerPanel` in the route; renders in both inline-sidebar (`mode="sidebar"`) and sheet (`mode="sheet"`) layouts.
 
 ### Tree Library Capabilities
@@ -100,6 +104,20 @@ Panel width storage keys:
 - `apps/web/src/environmentApi.ts` — `listEntries` forwarded from RPC client.
 - `apps/web/src/lib/projectReactQuery.ts` — `projectListEntriesQueryOptions` and `projectQueryKeys.listEntries` added.
 
+### File Preview Data (✅ done)
+
+`projects.readFile` RPC is implemented end-to-end:
+
+- `packages/contracts/src/project.ts` — `ProjectReadFileInput`, `ProjectReadFileResult`, and `ProjectReadFileError` schemas.
+- `packages/contracts/src/rpc.ts` — `projectsReadFile` in `WS_METHODS`, `WsProjectsReadFileRpc` definition, registered in `WsRpcGroup`.
+- `packages/contracts/src/ipc.ts` — `readFile` added to `EnvironmentApi.projects`.
+- `apps/server/src/workspace/Services/WorkspaceFileSystem.ts` — `readFile` added to `WorkspaceFileSystemShape`.
+- `apps/server/src/workspace/Layers/WorkspaceFileSystem.ts` — `readFile` implemented with project-root path validation, realpath containment checks, a default 256 KiB preview limit, UTF-8 text decoding, and explicit `text`, `binary`, `too_large`, and `missing` result states.
+- `apps/server/src/ws.ts` — handler wired under `WS_METHODS.projectsReadFile`.
+- `apps/web/src/rpc/wsRpcClient.ts` — `readFile` added to `WsRpcClient` and `createWsRpcClient`.
+- `apps/web/src/environmentApi.ts` — `readFile` forwarded from the RPC client.
+- `apps/web/src/lib/projectReactQuery.ts` — `projectReadFileQueryOptions` and `projectQueryKeys.readFile` added.
+
 ## Data And RPC Plan
 
 ### First Iteration
@@ -124,9 +142,12 @@ If startup cost is noticeable in large repos, switch the explorer to lazy loadin
 
 ### Preview And Diff Data
 
+Implemented RPCs / data sources:
+
+- `projects.readFile`: reads a project-relative text file for preview. Reads are bounded by size, path-validated, realpath-contained under the project root, and return explicit non-crashing states for binary, too-large, and missing files.
+
 Planned RPCs / data sources:
 
-- `projects.readFile` or `filesystem.readFile`: read a project-relative text file for preview. Must be bounded by size and path validation.
 - `vcs.getFileStatus` or an extension to `vcs.status`: expose per-path status kinds (`added`, `deleted`, `modified`, `renamed`, `untracked`, `ignored`) instead of only insertion/deletion counts.
 - `vcs.getFileDiff`: fetch the current working-tree diff for one project-relative file. This should cover staged and unstaged changes, and distinguish deleted/renamed/untracked files.
 
@@ -149,10 +170,12 @@ All implementation complete. Server tests for `listEntries` are deferred to Mile
    - Resolves active project from thread state, then uses project `cwd` as the explorer root.
    - Fetches workspace entries via React Query using `projectListEntriesQueryOptions`.
    - Converts `ProjectEntry[]` to tree paths (directories get a trailing `/`).
-   - Creates a `FileTree` model via `useFileTree` with `flattenEmptyDirectories: true`, `initialExpansion: 1`, `search: true`, and a directories-before-files sort comparator.
-   - Calls `model.resetPaths(paths)` in `useEffect` to update the tree when entries change.
-   - Renders loading, empty, unavailable-workspace, and truncated states.
-   - Themes the tree via CSS custom property overrides (`--trees-*-override`) on the wrapper element.
+
+- Creates a `FileTree` model via `useFileTree` with `flattenEmptyDirectories: true`, `initialExpansion: 0`, `search: true`, and a directories-before-files sort comparator so empty directory chains are flattened but folders start collapsed.
+- Calls `model.resetPaths(paths)` in `useEffect` to update the tree when entries change.
+- Renders loading, empty, unavailable-workspace, and truncated states.
+- Themes the tree via CSS custom property overrides (`--trees-*-override`) on the wrapper element.
+
 3. `FileExplorerPanel` lazy-loaded via `LazyFileExplorerPanel` in `_chat.$environmentId.$threadId.tsx` (same pattern as `LazyDiffPanel`).
 4. Both inline-sidebar and sheet paths now render `<LazyFileExplorerPanel />` instead of `null`.
 
@@ -165,24 +188,24 @@ All implementation complete. Server tests for `listEntries` are deferred to Mile
 5. ✅ **Project-specific tree root.** The explorer intentionally uses project `cwd`, not `thread.worktreePath`, so the query key and tree model are project-specific instead of thread-specific.
 6. ✅ **Query invalidation on workspace change** — different project `cwd` already produces a different React Query key so the query refetches automatically. Checkpoint rollback/revert currently invalidates `projectQueryKeys.all` through the environment connection service, which refreshes the explorer list along with other project queries.
 
-### Milestone 6 — Git status decorations
+### Milestone 6 — Git status decorations (✅ done)
 
-1. Use `useGitStatus({ environmentId, cwd: projectCwd })` in `FileExplorerPanel`.
-2. Convert `gitStatus.workingTree.files` to `@pierre/trees` `GitStatusEntry[]`.
-3. Pass entries through `useFileTree({ gitStatus })` on initialization and call `model.setGitStatus(gitStatusEntries)` when status updates.
-4. First implementation may mark all changed files as `"modified"` because the current `VcsStatusResult` only exposes changed paths and insertion/deletion counts.
-5. Add optional `renderRowDecoration` badges for insertion/deletion counts if the built-in git status indicator is not enough.
-6. Refresh behavior should reuse existing git status subscriptions and invalidation; do not add a second polling loop.
+1. ✅ `FileExplorerPanel` now calls `useGitStatus({ environmentId, cwd: projectCwd })`.
+2. ✅ `gitStatus.workingTree.files` is converted to `@pierre/trees` `GitStatusEntry[]`.
+3. ✅ Git status entries are passed through `useFileTree({ gitStatus })` on initialization and synced with `model.setGitStatus(gitStatusEntries)` when status updates.
+4. ✅ Changed files are marked `"modified"` for now because the current `VcsStatusResult` exposes changed paths with insertion/deletion counts, but not per-file status kinds.
+5. ✅ Refresh behavior reuses existing git status subscriptions and invalidation; no second polling loop was added.
+6. Deferred: optional `renderRowDecoration` badges for insertion/deletion counts can be added later if the built-in git status indicator is not enough.
 
-### Milestone 7 — Read-only file preview
+### Milestone 7 — Read-only file preview (✅ done)
 
-1. Add a safe, bounded file-read RPC for project-relative file paths.
-2. Track selected file path in `FileExplorerPanel` local state. Keep it client-local for now; do not add selected file path to URL state unless deep-linking becomes a product requirement.
-3. Change single-click selection to update preview state instead of immediately opening the external editor.
-4. Keep external editor open available through a deliberate action such as Enter, double-click if supported, or a row/header icon button.
-5. Render a read-only preview pane immediately to the left of the file tree inside the file explorer panel surface.
-6. Handle binary files, files above the preview size limit, deleted files, unreadable files, and missing workspace state with non-crashing empty/error states.
-7. Use syntax highlighting only if it can be loaded lazily and kept cheap; plain text is acceptable for the first preview milestone.
+1. ✅ Added `projects.readFile`, a safe, bounded file-read RPC for project-relative file paths.
+2. ✅ `FileExplorerPanel` tracks selected file path in local state only; URL state still only encodes whether the file explorer is open.
+3. ✅ Single-click selection updates preview state instead of immediately opening the external editor.
+4. ✅ External editor open remains available via an explicit header icon button for the selected file.
+5. ✅ A read-only preview pane renders immediately to the right of the file tree inside the file explorer panel surface.
+6. ✅ Binary files, files above the preview size limit, missing/deleted files, unreadable files, and missing workspace state all render non-crashing states.
+7. ✅ Preview rendering is plain text for now; syntax highlighting remains deferred until it can be loaded lazily and kept cheap.
 
 ### Milestone 8 — Selected-file working-tree changes
 
@@ -207,7 +230,7 @@ Focused test areas still needed:
 - Workspace entry list RPC and VCS ignore behavior (server tests).
 - File explorer rendering states and row activation.
 - Git status mapping and tree decoration updates.
-- File preview RPC path validation, size limits, binary handling, and deleted-file states.
+- File preview UI rendering states.
 - Selected-file working-tree diff rendering for modified, added, deleted, renamed, and untracked files.
 - Browser test: `mod+shift+e` toggles the right panel; mutual exclusion with diff (opening one closes the other).
 
@@ -227,7 +250,7 @@ Focused test areas still needed:
 3. ✅ Workspace list RPC (`projects.listEntries`)
 4. ✅ `FileExplorerPanel` component with `@pierre/trees`
 5. ✅ File selection, editor-open, and edge states
-6. Git status decorations ← **NEXT**
-7. Read-only file preview
-8. Selected-file working-tree changes
+6. ✅ Git status decorations
+7. ✅ Read-only file preview
+8. Selected-file working-tree changes ← **NEXT**
 9. Tests and final validation

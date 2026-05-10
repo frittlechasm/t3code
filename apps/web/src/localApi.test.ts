@@ -51,6 +51,8 @@ const rpcClientMock = {
   },
   projects: {
     searchEntries: vi.fn(),
+    listEntries: vi.fn(),
+    readFile: vi.fn(),
     writeFile: vi.fn(),
   },
   filesystem: {
@@ -461,6 +463,29 @@ describe("wsApi", () => {
       cwd: "/tmp/project",
       relativePath: "plan.md",
       contents: "# Plan\n",
+    });
+  });
+
+  it("forwards workspace file reads to the project RPC", async () => {
+    rpcClientMock.projects.readFile.mockResolvedValue({
+      relativePath: "plan.md",
+      sizeBytes: 7,
+      state: "text",
+      contents: "# Plan\n",
+    });
+    const { createEnvironmentApi } = await import("./environmentApi");
+
+    const api = createEnvironmentApi(rpcClientMock as never);
+    await api.projects.readFile({
+      cwd: "/tmp/project",
+      relativePath: "plan.md",
+      maxBytes: 1024,
+    });
+
+    expect(rpcClientMock.projects.readFile).toHaveBeenCalledWith({
+      cwd: "/tmp/project",
+      relativePath: "plan.md",
+      maxBytes: 1024,
     });
   });
 
