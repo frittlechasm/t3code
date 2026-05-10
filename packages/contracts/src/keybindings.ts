@@ -53,6 +53,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.new",
   "terminal.close",
   "diff.toggle",
+  "taskWindow.toggle",
   "commandPalette.toggle",
   "chat.new",
   "chat.newLocal",
