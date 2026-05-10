@@ -54,6 +54,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.close",
   "diff.toggle",
   "fileExplorer.toggle",
+  "fileExplorer.focusSearch",
   "commandPalette.toggle",
   "chat.new",
   "chat.newLocal",

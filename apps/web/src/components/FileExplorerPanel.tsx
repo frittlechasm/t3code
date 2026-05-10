@@ -11,7 +11,7 @@ import type {
   VcsStatusResult,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Code2Icon, ExternalLinkIcon, GitCompareIcon } from "lucide-react";
+import { Code2Icon, ExternalLinkIcon, GitCompareIcon, TextWrapIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,7 +25,7 @@ import {
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { useSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "~/rpc/serverState";
-import { isOpenFavoriteEditorShortcut } from "../keybindings";
+import { isFileExplorerFocusSearchShortcut, isOpenFavoriteEditorShortcut } from "../keybindings";
 import { useTheme } from "~/hooks/useTheme";
 import {
   DIFF_RENDER_UNSAFE_CSS,
@@ -370,6 +370,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   const projectCwd = activeProject?.cwd ?? null;
   const [selectedRelativePath, setSelectedRelativePath] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<FilePreviewMode>("contents");
+  const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
   const [treePaneWidth, setTreePaneWidth] = useState(readPersistedFileTreePaneWidth);
 
   const entriesQuery = useQuery(projectListEntriesQueryOptions({ environmentId, cwd: projectCwd }));
@@ -431,8 +432,8 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     if (!cwd || !relativePath) return;
     const api = readLocalApi();
     if (!api) return;
-    const targetPath = resolvePathLinkTarget(relativePath, cwd);
-    void openInPreferredEditor(api, targetPath).catch((error) => {
+    const filePath = resolvePathLinkTarget(relativePath, cwd);
+    void openInPreferredEditor(api, cwd, filePath).catch((error) => {
       console.warn("Failed to open file explorer entry in editor.", error);
     });
   }, [selectedRelativePath]);
@@ -474,6 +475,14 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     strict: false,
     select: (search) => (search as { panel?: string }).panel === "files",
   });
+  const previousFilesPanelOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isFilesPanelOpen && !previousFilesPanelOpenRef.current) {
+      setDiffWordWrap(settings.diffWordWrap);
+    }
+    previousFilesPanelOpenRef.current = isFilesPanelOpen;
+  }, [isFilesPanelOpen, settings.diffWordWrap]);
 
   useEffect(() => {
     if (!isFilesPanelOpen) return;
@@ -499,6 +508,22 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [isFilesPanelOpen, keybindings]);
+
+  useEffect(() => {
+    if (!isFilesPanelOpen) return;
+
+    const handler = (e: KeyboardEvent) => {
+      if (!isFileExplorerFocusSearchShortcut(e, keybindings)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!model.isSearchOpen()) {
+        model.openSearch();
+      }
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [isFilesPanelOpen, keybindings, model]);
 
   useEffect(() => {
     const containerWidth = splitContainerRef.current?.clientWidth;
@@ -658,6 +683,17 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
                   </Toggle>
                 </ToggleGroup>
               )}
+              {selectedRelativePath && (
+                <Toggle
+                  aria-label={diffWordWrap ? "Disable line wrapping" : "Enable line wrapping"}
+                  variant="outline"
+                  size="xs"
+                  pressed={diffWordWrap}
+                  onPressedChange={(pressed) => setDiffWordWrap(Boolean(pressed))}
+                >
+                  <TextWrapIcon className="size-3" />
+                </Toggle>
+              )}
               {filePreviewQuery.data?.state === "text" && (
                 <span className="shrink-0 text-[10px] text-muted-foreground/70">
                   {formatBytes(filePreviewQuery.data.sizeBytes)}
@@ -674,7 +710,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
               isCompactDiffLoading={compactFileDiffQuery.isLoading}
               error={filePreviewQuery.error}
               compactDiffError={compactFileDiffQuery.error}
-              diffWordWrap={settings.diffWordWrap}
+              diffWordWrap={diffWordWrap}
               resolvedTheme={resolvedTheme}
             />
           </div>
