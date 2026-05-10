@@ -18,6 +18,7 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   TextWrapIcon,
+  XIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -31,6 +32,12 @@ import {
 } from "react";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { useSettings } from "~/hooks/useSettings";
+import {
+  closeFileExplorerTab,
+  fileExplorerTabDirectionFromShortcut,
+  openFileExplorerTab,
+  selectAdjacentFileExplorerTab,
+} from "~/fileExplorerTabs";
 import { useServerKeybindings } from "~/rpc/serverState";
 import {
   isFileExplorerFocusSearchShortcut,
@@ -52,7 +59,7 @@ import {
 } from "~/lib/projectReactQuery";
 import { openInPreferredEditor } from "../editorPreferences";
 import { readLocalApi } from "../localApi";
-import { isMacPlatform } from "../lib/utils";
+import { cn, isMacPlatform } from "../lib/utils";
 import { selectProjectByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolvePathLinkTarget } from "../terminal-links";
@@ -420,7 +427,8 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
 
   const environmentId = activeThread?.environmentId ?? null;
   const projectCwd = activeProject?.cwd ?? null;
-  const [selectedRelativePath, setSelectedRelativePath] = useState<string | null>(null);
+  const [openFileTabs, setOpenFileTabs] = useState<readonly string[]>([]);
+  const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<FilePreviewMode>("contents");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
   const [treePaneWidth, setTreePaneWidth] = useState(readPersistedFileTreePaneWidth);
@@ -433,15 +441,15 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     projectReadFileQueryOptions({
       environmentId,
       cwd: projectCwd,
-      relativePath: selectedRelativePath,
+      relativePath: activeFilePath,
     }),
   );
-  const selectedFileHasChanges = isPathChanged(gitStatus.data, selectedRelativePath);
+  const selectedFileHasChanges = isPathChanged(gitStatus.data, activeFilePath);
   const compactFileDiffQuery = useQuery(
     vcsFileDiffQueryOptions({
       environmentId,
       cwd: projectCwd,
-      path: selectedRelativePath,
+      path: activeFilePath,
       ignoreWhitespace: settings.diffIgnoreWhitespace,
       contextLines: FILE_EXPLORER_DIFF_CONTEXT_LINES,
       enabled: selectedFileHasChanges,
@@ -451,7 +459,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     vcsFileDiffQueryOptions({
       environmentId,
       cwd: projectCwd,
-      path: selectedRelativePath,
+      path: activeFilePath,
       ignoreWhitespace: settings.diffIgnoreWhitespace,
       enabled: selectedFileHasChanges,
     }),
@@ -473,15 +481,17 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   } | null>(null);
   const projectCwdRef = useRef<string | null>(projectCwd);
   const entriesByTreePathRef = useRef<ReadonlyMap<string, ProjectEntry>>(entriesByTreePath);
-  const selectedRelativePathRef = useRef<string | null>(selectedRelativePath);
+  const activeFilePathRef = useRef<string | null>(activeFilePath);
+  const openFileTabsRef = useRef<readonly string[]>(openFileTabs);
   projectCwdRef.current = projectCwd;
   entriesByTreePathRef.current = entriesByTreePath;
-  selectedRelativePathRef.current = selectedRelativePath;
+  activeFilePathRef.current = activeFilePath;
+  openFileTabsRef.current = openFileTabs;
   treePaneWidthRef.current = treePaneWidth;
 
   const openSelectedFileInEditor = useCallback(() => {
     const cwd = projectCwdRef.current;
-    const relativePath = selectedRelativePath;
+    const relativePath = activeFilePath;
     if (!cwd || !relativePath) return;
     const api = readLocalApi();
     if (!api) return;
@@ -489,7 +499,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     void openInPreferredEditor(api, cwd, filePath).catch((error) => {
       console.warn("Failed to open file explorer entry in editor.", error);
     });
-  }, [selectedRelativePath]);
+  }, [activeFilePath]);
 
   const { model } = useFileTree({
     paths: treePaths,
@@ -503,11 +513,13 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     onSelectionChange: (selectedPaths) => {
       const selectedPath = selectedPaths.at(-1);
       if (!selectedPath) {
-        setSelectedRelativePath(null);
         return;
       }
       const entry = entriesByTreePathRef.current.get(selectedPath);
-      setSelectedRelativePath(entry?.kind === "file" ? entry.path : null);
+      if (entry?.kind !== "file") return;
+      const next = openFileExplorerTab(openFileTabsRef.current, entry.path);
+      setOpenFileTabs(next.tabs);
+      setActiveFilePath(next.activePath);
     },
   });
 
@@ -521,7 +533,12 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
 
   useEffect(() => {
     setPreviewMode(selectedFileHasChanges ? "changes" : "contents");
-  }, [selectedFileHasChanges, selectedRelativePath]);
+  }, [selectedFileHasChanges, activeFilePath]);
+
+  useEffect(() => {
+    setOpenFileTabs([]);
+    setActiveFilePath(null);
+  }, [projectCwd]);
 
   const keybindings = useServerKeybindings();
   const toggleTreeShortcutLabel = useMemo(() => {
@@ -548,7 +565,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
 
     const handler = (e: KeyboardEvent) => {
       if (!isOpenFavoriteEditorShortcut(e, keybindings)) return;
-      const relativePath = selectedRelativePathRef.current;
+      const relativePath = activeFilePathRef.current;
       const cwd = projectCwdRef.current;
       if (!relativePath || !cwd) return;
 
@@ -567,6 +584,29 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [isFilesPanelOpen, keybindings]);
+
+  useEffect(() => {
+    if (!isFilesPanelOpen) return;
+
+    const handler = (e: KeyboardEvent) => {
+      const direction = fileExplorerTabDirectionFromShortcut(e);
+      if (!direction) return;
+
+      const nextActivePath = selectAdjacentFileExplorerTab(
+        openFileTabsRef.current,
+        activeFilePathRef.current,
+        direction,
+      );
+      if (!nextActivePath || nextActivePath === activeFilePathRef.current) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setActiveFilePath(nextActivePath);
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [isFilesPanelOpen]);
 
   useEffect(() => {
     if (!isFilesPanelOpen) return;
@@ -640,6 +680,12 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
     });
   }, [persistTreePaneVisible]);
 
+  const handleCloseFileTab = useCallback((path: string) => {
+    const next = closeFileExplorerTab(openFileTabsRef.current, activeFilePathRef.current, path);
+    setOpenFileTabs(next.tabs);
+    setActiveFilePath(next.activePath);
+  }, []);
+
   const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -694,7 +740,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
             render={
               <Button
                 aria-label="Open selected file in editor"
-                disabled={!selectedRelativePath}
+                disabled={!activeFilePath}
                 onClick={openSelectedFileInEditor}
                 size="icon-xs"
                 variant="ghost"
@@ -788,13 +834,56 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
                 : "flex min-w-0 flex-1 flex-col"
             }
           >
-            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/50 px-3">
-              <span className="truncate text-xs font-medium">
-                {selectedRelativePath ? fileNameOf(selectedRelativePath) : "Preview"}
-              </span>
-              {selectedRelativePath && (
+            <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/50 px-2">
+              <div
+                className="flex min-w-0 flex-1 items-end self-stretch overflow-x-auto"
+                role="tablist"
+                aria-label="Open files"
+              >
+                {openFileTabs.length === 0 ? (
+                  <span className="self-center truncate px-1 text-xs font-medium text-muted-foreground/80">
+                    Preview
+                  </span>
+                ) : (
+                  openFileTabs.map((path) => {
+                    const active = path === activeFilePath;
+                    return (
+                      <div
+                        key={path}
+                        className={cn(
+                          "flex h-8 min-w-0 max-w-48 shrink-0 items-center border-r border-border/50",
+                          active
+                            ? "bg-background text-foreground"
+                            : "bg-muted/30 text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                        )}
+                        role="presentation"
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          title={path}
+                          className="min-w-0 flex-1 truncate px-2 text-left text-xs font-medium"
+                          onClick={() => setActiveFilePath(path)}
+                        >
+                          {fileNameOf(path)}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Close ${fileNameOf(path)}`}
+                          className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                          onClick={() => handleCloseFileTab(path)}
+                        >
+                          <XIcon className="size-3" aria-hidden />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              {activeFilePath && (
                 <ToggleGroup
-                  className="ml-auto shrink-0"
+                  className="shrink-0"
                   variant="outline"
                   size="xs"
                   value={[previewMode]}
@@ -817,7 +906,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
                   </Toggle>
                 </ToggleGroup>
               )}
-              {selectedRelativePath && (
+              {activeFilePath && (
                 <Toggle
                   aria-label={diffWordWrap ? "Disable line wrapping" : "Enable line wrapping"}
                   variant="outline"
@@ -835,7 +924,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
               )}
             </div>
             <FilePreviewContent
-              selectedPath={selectedRelativePath}
+              selectedPath={activeFilePath}
               readFile={filePreviewQuery.data}
               compactFileDiff={compactFileDiffQuery.data}
               fullFileDiff={fullFileDiffQuery.data}
