@@ -47,6 +47,7 @@ export type EditorId = typeof EditorId.Type;
 export const LaunchEditorInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   editor: EditorId,
+  filePath: Schema.optional(TrimmedNonEmptyString),
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
 

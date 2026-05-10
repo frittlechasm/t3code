@@ -17,6 +17,8 @@ import type {
   VcsStatusInput,
   VcsStatusResult,
   VcsCreateRefResult,
+  VcsFileDiffInput,
+  VcsFileDiffResult,
 } from "./git.ts";
 import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
 import type {
@@ -443,7 +445,7 @@ export interface LocalApi {
     confirm: (message: string) => Promise<boolean>;
   };
   shell: {
-    openInEditor: (cwd: string, editor: EditorId) => Promise<void>;
+    openInEditor: (cwd: string, editor: EditorId, filePath?: string) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
   };
   contextMenu: {
@@ -536,6 +538,7 @@ export interface EnvironmentApi {
     init: (input: VcsInitInput) => Promise<void>;
     pull: (input: VcsPullInput) => Promise<VcsPullResult>;
     refreshStatus: (input: VcsStatusInput) => Promise<VcsStatusResult>;
+    getFileDiff: (input: VcsFileDiffInput) => Promise<VcsFileDiffResult>;
     onStatus: (
       input: VcsStatusInput,
       callback: (status: VcsStatusResult) => void,

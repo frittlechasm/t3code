@@ -167,6 +167,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
+      const gitDriver = yield* GitVcsDriver.GitVcsDriver;
       const gitWorkflow = yield* GitWorkflowService;
       const vcsProvisioning = yield* VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
@@ -1047,6 +1048,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               "rpc.aggregate": "vcs",
             },
           ),
+        [WS_METHODS.vcsGetFileDiff]: (input) =>
+          observeRpcEffect(WS_METHODS.vcsGetFileDiff, gitDriver.getFileDiff(input), {
+            "rpc.aggregate": "vcs",
+          }),
         [WS_METHODS.vcsPull]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsPull,

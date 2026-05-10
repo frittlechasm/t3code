@@ -84,11 +84,13 @@ export interface WsRpcClient {
     readonly openInEditor: (input: {
       readonly cwd: Parameters<LocalApi["shell"]["openInEditor"]>[0];
       readonly editor: Parameters<LocalApi["shell"]["openInEditor"]>[1];
+      readonly filePath?: Parameters<LocalApi["shell"]["openInEditor"]>[2];
     }) => ReturnType<LocalApi["shell"]["openInEditor"]>;
   };
   readonly vcs: {
     readonly pull: RpcUnaryMethod<typeof WS_METHODS.vcsPull>;
     readonly refreshStatus: RpcUnaryMethod<typeof WS_METHODS.vcsRefreshStatus>;
+    readonly getFileDiff: RpcUnaryMethod<typeof WS_METHODS.vcsGetFileDiff>;
     readonly onStatus: (
       input: RpcInput<typeof WS_METHODS.subscribeVcsStatus>,
       listener: (status: VcsStatusResult) => void,
@@ -207,6 +209,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       pull: (input) => transport.request((client) => client[WS_METHODS.vcsPull](input)),
       refreshStatus: (input) =>
         transport.request((client) => client[WS_METHODS.vcsRefreshStatus](input)),
+      getFileDiff: (input) =>
+        transport.request((client) => client[WS_METHODS.vcsGetFileDiff](input)),
       onStatus: (input, listener, options) => {
         let current: VcsStatusResult | null = null;
         return transport.subscribe(
