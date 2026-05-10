@@ -451,6 +451,7 @@ export interface DesktopBridge {
   clearCloudAuthToken: () => Promise<void>;
   fetchCloudAuth: (input: DesktopCloudAuthFetchInput) => Promise<DesktopCloudAuthFetchResult>;
   onCloudAuthCallback: (listener: (rawUrl: string) => void) => () => void;
+  closeWindow?: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;

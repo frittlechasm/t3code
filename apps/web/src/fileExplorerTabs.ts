@@ -65,3 +65,11 @@ export function fileExplorerTabDirectionFromShortcut(
 
   return key === "]" ? "next" : "previous";
 }
+
+export function isFileExplorerCloseTabShortcut(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">,
+): boolean {
+  if (event.key.toLowerCase() !== "w") return false;
+  if (event.altKey || event.shiftKey) return false;
+  return event.metaKey || event.ctrlKey;
+}

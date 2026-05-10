@@ -127,6 +127,9 @@ const make = Effect.gen(function* () {
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
+    const closeWindowClick = () => {
+      runMenuEffect("close-window", dispatchMenuAction("window.close"));
+    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (environment.platform === "darwin") {
@@ -170,7 +173,11 @@ const make = Effect.gen(function* () {
                 },
                 { type: "separator" as const },
               ]),
-          { role: environment.platform === "darwin" ? "close" : "quit" },
+          {
+            label: "Close Window",
+            accelerator: "CmdOrCtrl+W",
+            click: closeWindowClick,
+          },
         ],
       },
       { role: "editMenu" },

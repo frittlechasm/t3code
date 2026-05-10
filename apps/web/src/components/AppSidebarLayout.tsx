@@ -7,6 +7,7 @@ import {
   clearShortcutModifierState,
   syncShortcutModifierStateFromKeyboardEvent,
 } from "../shortcutModifierState";
+import { requestWindowClose } from "../windowCloseRequests";
 
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
@@ -45,6 +46,12 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     const unsubscribe = onMenuAction((action) => {
       if (action === "open-settings") {
         void navigate({ to: "/settings" });
+        return;
+      }
+
+      if (action === "window.close") {
+        if (!requestWindowClose()) return;
+        void window.desktopBridge?.closeWindow?.();
       }
     });
 

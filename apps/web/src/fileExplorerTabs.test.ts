@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   closeFileExplorerTab,
   fileExplorerTabDirectionFromShortcut,
+  isFileExplorerCloseTabShortcut,
   openFileExplorerTab,
   selectAdjacentFileExplorerTab,
 } from "./fileExplorerTabs";
@@ -63,5 +64,35 @@ describe("file explorer tabs", () => {
         "MacIntel",
       ),
     ).toBeNull();
+  });
+
+  it("matches tab close shortcuts", () => {
+    expect(
+      isFileExplorerCloseTabShortcut({
+        key: "w",
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+      }),
+    ).toBe(true);
+    expect(
+      isFileExplorerCloseTabShortcut({
+        key: "W",
+        metaKey: false,
+        ctrlKey: true,
+        shiftKey: false,
+        altKey: false,
+      }),
+    ).toBe(true);
+    expect(
+      isFileExplorerCloseTabShortcut({
+        key: "w",
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: false,
+      }),
+    ).toBe(false);
   });
 });
