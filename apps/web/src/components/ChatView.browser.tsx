@@ -1916,6 +1916,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await vi.waitFor(
         () => {
           expect(mounted.router.state.location.search).toMatchObject({ panel: "files" });
+          expect(document.body.textContent).not.toContain("No workspace available.");
           const listRequest = wsRequests.find(
             (request) => request._tag === WS_METHODS.projectsListEntries,
           );

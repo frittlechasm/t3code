@@ -889,7 +889,7 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
 
   return (
     <DiffPanelShell mode={mode} header={headerRow}>
-      {!activeThread || !projectCwd ? (
+      {!threadContext || !projectCwd ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           No workspace available.
         </div>
