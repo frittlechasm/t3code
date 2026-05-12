@@ -57,10 +57,10 @@ const LazyDiffPanel = (props: { mode: DiffPanelMode }) => {
   );
 };
 
-const LazyFileExplorerPanel = (props: { mode: DiffPanelMode }) => {
+const LazyFileExplorerPanel = (props: { mode: DiffPanelMode; onClose: () => void }) => {
   return (
     <Suspense fallback={<DiffPanelLoadingState label="Loading file explorer..." />}>
-      <FileExplorerPanel mode={props.mode} />
+      <FileExplorerPanel mode={props.mode} onClose={props.onClose} />
     </Suspense>
   );
 };
@@ -124,7 +124,7 @@ const FileExplorerPanelInlineSidebar = (props: {
       minWidth={FILE_EXPLORER_INLINE_SIDEBAR_MIN_WIDTH}
       storageKey={FILE_EXPLORER_INLINE_SIDEBAR_WIDTH_STORAGE_KEY}
     >
-      {renderFilesContent ? <LazyFileExplorerPanel mode="sidebar" /> : null}
+      {renderFilesContent ? <LazyFileExplorerPanel mode="sidebar" onClose={onCloseFiles} /> : null}
     </RightPanelInlineSidebar>
   );
 };
@@ -323,7 +323,9 @@ function ChatThreadRouteView() {
         {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
       </RightPanelSheet>
       <RightPanelSheet open={filesOpen} onClose={closeFiles}>
-        {shouldRenderFilesContent ? <LazyFileExplorerPanel mode="sheet" /> : null}
+        {shouldRenderFilesContent ? (
+          <LazyFileExplorerPanel mode="sheet" onClose={closeFiles} />
+        ) : null}
       </RightPanelSheet>
     </>
   );
