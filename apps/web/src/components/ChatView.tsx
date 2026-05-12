@@ -1736,7 +1736,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [diffOpen, environmentId, isServerThread, navigate, onDiffPanelOpen, threadId]);
 
   const onToggleFiles = useCallback(() => {
-    if (!isServerThread) {
+    if (!activeThread) {
       return;
     }
     if (!filesOpen) {
@@ -1756,7 +1756,7 @@ export default function ChatView(props: ChatViewProps) {
           : { ...rest, panel: "files" };
       },
     });
-  }, [environmentId, filesOpen, isServerThread, navigate, onFileExplorerPanelOpen, threadId]);
+  }, [activeThread, environmentId, filesOpen, navigate, onFileExplorerPanelOpen, threadId]);
 
   const envLocked = Boolean(
     activeThread &&
