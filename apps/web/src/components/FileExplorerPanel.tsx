@@ -4,12 +4,14 @@ import { parsePatchFiles } from "@pierre/diffs";
 import { File, FileDiff, type FileContents, type FileDiffMetadata } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useSearch } from "@tanstack/react-router";
+import { scopeProjectRef } from "@t3tools/client-runtime";
 import type {
   ProjectEntry,
   ProjectReadFileResult,
   VcsFileDiffResult,
   VcsStatusResult,
 } from "@t3tools/contracts";
+import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import * as Schema from "effect/Schema";
 import {
   Code2Icon,
@@ -32,6 +34,7 @@ import {
 } from "react";
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { useSettings } from "~/hooks/useSettings";
+import { useComposerDraftStore } from "../composerDraftStore";
 import {
   closeFileExplorerTab,
   fileExplorerTabDirectionFromShortcut,
@@ -428,17 +431,24 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
   const activeThread = useStore(
     useMemo(() => createThreadSelectorByRef(routeThreadRef), [routeThreadRef]),
   );
+  const draftThread = useComposerDraftStore((store) =>
+    routeThreadRef ? store.getDraftSessionByRef(routeThreadRef) : null,
+  );
+  const threadContext = activeThread ?? draftThread;
+  const projectRef = threadContext
+    ? scopeProjectRef(threadContext.environmentId, threadContext.projectId)
+    : null;
   const activeProject = useStore((store) =>
-    activeThread?.projectId
-      ? selectProjectByRef(store, {
-          environmentId: activeThread.environmentId,
-          projectId: activeThread.projectId,
-        })
-      : undefined,
+    projectRef ? selectProjectByRef(store, projectRef) : undefined,
   );
 
-  const environmentId = activeThread?.environmentId ?? null;
-  const projectCwd = activeProject?.cwd ?? null;
+  const environmentId = threadContext?.environmentId ?? null;
+  const projectCwd = activeProject
+    ? projectScriptCwd({
+        project: { cwd: activeProject.cwd },
+        worktreePath: threadContext?.worktreePath ?? null,
+      })
+    : null;
   const [openFileTabs, setOpenFileTabs] = useState<readonly string[]>([]);
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<FilePreviewMode>("contents");
