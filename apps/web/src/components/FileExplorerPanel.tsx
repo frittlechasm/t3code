@@ -255,6 +255,7 @@ function buildPreviewFileContents(path: string, readFile: ProjectReadFileResult)
 
 interface FileExplorerPanelProps {
   mode?: FileExplorerPanelMode;
+  onClose?: () => void;
 }
 
 function FilePreviewState(props: { children: ReactNode }) {
@@ -421,7 +422,7 @@ function FilePreviewContent(props: {
   );
 }
 
-export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanelProps) {
+export default function FileExplorerPanel({ mode = "inline", onClose }: FileExplorerPanelProps) {
   const { resolvedTheme } = useTheme();
   const settings = useSettings();
   const routeThreadRef = useParams({
@@ -883,6 +884,25 @@ export default function FileExplorerPanel({ mode = "inline" }: FileExplorerPanel
             {toggleTreeShortcutLabel ? ` (${toggleTreeShortcutLabel})` : ""}
           </TooltipPopup>
         </Tooltip>
+        {onClose ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label="Close file explorer"
+                  onClick={onClose}
+                  size="icon-xs"
+                  variant="ghost"
+                >
+                  <XIcon className="size-3.5" aria-hidden />
+                </Button>
+              }
+            />
+            <TooltipPopup side="bottom" align="end">
+              Close file explorer
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
     </>
   );

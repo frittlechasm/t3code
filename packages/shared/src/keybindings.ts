@@ -24,7 +24,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
-  { key: "mod+shift+e", command: "fileExplorer.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+e", command: "fileExplorer.toggle" },
   { key: "mod+shift+y", command: "fileExplorer.toggleTree", when: "!terminalFocus" },
   { key: "mod+/", command: "fileExplorer.focusSearch", when: "!terminalFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },

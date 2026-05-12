@@ -387,6 +387,29 @@ export function isFileExplorerToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "fileExplorer.toggle", options);
 }
 
+export function isFileExplorerToggleShortcutWithLegacyTerminalFocus(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  if (isFileExplorerToggleShortcut(event, keybindings, options)) {
+    return true;
+  }
+
+  const context = resolveContext(options);
+  if (!context.terminalFocus) {
+    return false;
+  }
+
+  return isFileExplorerToggleShortcut(event, keybindings, {
+    ...options,
+    context: {
+      ...context,
+      terminalFocus: false,
+    },
+  });
+}
+
 export function isFileExplorerToggleTreeShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,

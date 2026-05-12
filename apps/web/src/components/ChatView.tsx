@@ -107,7 +107,11 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { BranchToolbar } from "./BranchToolbar";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  isFileExplorerToggleShortcutWithLegacyTerminalFocus,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon, TriangleAlertIcon, WifiOffIcon } from "lucide-react";
@@ -1912,9 +1916,8 @@ export default function ChatView(props: ChatViewProps) {
     [keybindings, nonTerminalShortcutLabelOptions],
   );
   const fileExplorerShortcutLabel = useMemo(
-    () =>
-      shortcutLabelForCommand(keybindings, "fileExplorer.toggle", nonTerminalShortcutLabelOptions),
-    [keybindings, nonTerminalShortcutLabelOptions],
+    () => shortcutLabelForCommand(keybindings, "fileExplorer.toggle"),
+    [keybindings],
   );
   const onToggleDiff = useCallback(() => {
     if (!isServerThread) {
@@ -2737,9 +2740,15 @@ export default function ChatView(props: ChatViewProps) {
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
       };
 
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: shortcutContext,
-      });
+      const command =
+        resolveShortcutCommand(event, keybindings, {
+          context: shortcutContext,
+        }) ??
+        (isFileExplorerToggleShortcutWithLegacyTerminalFocus(event, keybindings, {
+          context: shortcutContext,
+        })
+          ? "fileExplorer.toggle"
+          : null);
       if (!command) return;
 
       if (command === "terminal.toggle") {
