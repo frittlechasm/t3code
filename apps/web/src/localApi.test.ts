@@ -614,6 +614,7 @@ describe("wsApi", () => {
       sidebarProjectSortOrder: "manual" as const,
       sidebarThreadSortOrder: "created_at" as const,
       sidebarThreadPreviewCount: 6,
+      defaultTerminalPlacement: "bottom" as const,
       terminalViewMode: "sidebar" as const,
       timestampFormat: "24-hour" as const,
     };
@@ -678,6 +679,7 @@ describe("wsApi", () => {
       sidebarProjectSortOrder: "manual" as const,
       sidebarThreadSortOrder: "created_at" as const,
       sidebarThreadPreviewCount: 6,
+      defaultTerminalPlacement: "bottom" as const,
       terminalViewMode: "sidebar" as const,
       timestampFormat: "24-hour" as const,
     };
