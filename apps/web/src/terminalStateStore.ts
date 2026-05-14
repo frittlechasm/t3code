@@ -7,8 +7,10 @@
 
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime";
 import { type ScopedThreadRef, type TerminalEvent } from "@t3tools/contracts";
+import { DEFAULT_TERMINAL_PLACEMENT, type TerminalPlacement } from "@t3tools/contracts/settings";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { getClientSettings } from "./hooks/useSettings";
 import { resolveStorage } from "./lib/storage";
 import { terminalRunningSubprocessFromEvent } from "./terminalActivity";
 import {
@@ -20,6 +22,7 @@ import {
 
 interface ThreadTerminalState {
   terminalOpen: boolean;
+  terminalPlacement: TerminalPlacement;
   terminalHeight: number;
   terminalIds: string[];
   runningTerminalIds: string[];
@@ -43,14 +46,18 @@ const EMPTY_TERMINAL_EVENT_ENTRIES: ReadonlyArray<TerminalEventEntry> = [];
 const MAX_TERMINAL_EVENT_BUFFER = 200;
 
 interface PersistedTerminalStateStoreState {
-  terminalStateByThreadKey?: Record<string, ThreadTerminalState>;
+  terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;
 }
+
+type PersistedThreadTerminalState = Omit<ThreadTerminalState, "terminalPlacement"> & {
+  terminalPlacement?: TerminalPlacement;
+};
 
 export function migratePersistedTerminalStateStoreState(
   persistedState: unknown,
   version: number,
 ): PersistedTerminalStateStoreState {
-  if (version === 1 && persistedState && typeof persistedState === "object") {
+  if ((version === 1 || version === 2) && persistedState && typeof persistedState === "object") {
     const candidate = persistedState as PersistedTerminalStateStoreState;
     const nextTerminalStateByThreadKey = Object.fromEntries(
       Object.entries(candidate.terminalStateByThreadKey ?? {}).filter(([threadKey]) =>
@@ -180,6 +187,7 @@ function terminalGroupsEqual(left: ThreadTerminalGroup[], right: ThreadTerminalG
 function threadTerminalStateEqual(left: ThreadTerminalState, right: ThreadTerminalState): boolean {
   return (
     left.terminalOpen === right.terminalOpen &&
+    left.terminalPlacement === right.terminalPlacement &&
     left.terminalHeight === right.terminalHeight &&
     left.activeTerminalId === right.activeTerminalId &&
     left.activeTerminalGroupId === right.activeTerminalGroupId &&
@@ -191,6 +199,7 @@ function threadTerminalStateEqual(left: ThreadTerminalState, right: ThreadTermin
 
 const DEFAULT_THREAD_TERMINAL_STATE: ThreadTerminalState = Object.freeze({
   terminalOpen: false,
+  terminalPlacement: DEFAULT_TERMINAL_PLACEMENT,
   terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
   terminalIds: [DEFAULT_THREAD_TERMINAL_ID],
   runningTerminalIds: [],
@@ -204,20 +213,36 @@ const DEFAULT_THREAD_TERMINAL_STATE: ThreadTerminalState = Object.freeze({
   activeTerminalGroupId: fallbackGroupId(DEFAULT_THREAD_TERMINAL_ID),
 });
 
-function createDefaultThreadTerminalState(): ThreadTerminalState {
+function createDefaultThreadTerminalState(
+  terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
+): ThreadTerminalState {
   return {
     ...DEFAULT_THREAD_TERMINAL_STATE,
+    terminalPlacement,
     terminalIds: [...DEFAULT_THREAD_TERMINAL_STATE.terminalIds],
     runningTerminalIds: [...DEFAULT_THREAD_TERMINAL_STATE.runningTerminalIds],
     terminalGroups: copyTerminalGroups(DEFAULT_THREAD_TERMINAL_STATE.terminalGroups),
   };
 }
 
-function getDefaultThreadTerminalState(): ThreadTerminalState {
-  return DEFAULT_THREAD_TERMINAL_STATE;
+function getDefaultThreadTerminalState(
+  terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
+): ThreadTerminalState {
+  if (terminalPlacement === DEFAULT_THREAD_TERMINAL_STATE.terminalPlacement) {
+    return DEFAULT_THREAD_TERMINAL_STATE;
+  }
+  return createDefaultThreadTerminalState(terminalPlacement);
 }
 
-function normalizeThreadTerminalState(state: ThreadTerminalState): ThreadTerminalState {
+function normalizeTerminalPlacement(placement: unknown): TerminalPlacement {
+  return placement === "right" || placement === "bottom" ? placement : DEFAULT_TERMINAL_PLACEMENT;
+}
+
+function defaultTerminalPlacementFromSettings(): TerminalPlacement {
+  return getClientSettings().defaultTerminalPlacement;
+}
+
+function normalizeThreadTerminalState(state: PersistedThreadTerminalState): ThreadTerminalState {
   const terminalIds = normalizeTerminalIds(state.terminalIds);
   const nextTerminalIds = terminalIds.length > 0 ? terminalIds : [DEFAULT_THREAD_TERMINAL_ID];
   const runningTerminalIds = normalizeRunningTerminalIds(state.runningTerminalIds, nextTerminalIds);
@@ -235,6 +260,7 @@ function normalizeThreadTerminalState(state: ThreadTerminalState): ThreadTermina
 
   const normalized: ThreadTerminalState = {
     terminalOpen: state.terminalOpen,
+    terminalPlacement: normalizeTerminalPlacement(state.terminalPlacement),
     terminalHeight:
       Number.isFinite(state.terminalHeight) && state.terminalHeight > 0
         ? state.terminalHeight
@@ -249,12 +275,21 @@ function normalizeThreadTerminalState(state: ThreadTerminalState): ThreadTermina
       terminalGroups[0]?.id ??
       fallbackGroupId(DEFAULT_THREAD_TERMINAL_ID),
   };
-  return threadTerminalStateEqual(state, normalized) ? state : normalized;
+  return state.terminalPlacement !== undefined &&
+    threadTerminalStateEqual(state as ThreadTerminalState, normalized)
+    ? (state as ThreadTerminalState)
+    : normalized;
 }
 
-function isDefaultThreadTerminalState(state: ThreadTerminalState): boolean {
+function isDefaultThreadTerminalState(
+  state: ThreadTerminalState,
+  defaultTerminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
+): boolean {
   const normalized = normalizeThreadTerminalState(state);
-  return threadTerminalStateEqual(normalized, DEFAULT_THREAD_TERMINAL_STATE);
+  return threadTerminalStateEqual(
+    normalized,
+    getDefaultThreadTerminalState(defaultTerminalPlacement),
+  );
 }
 
 function isValidTerminalId(terminalId: string): boolean {
@@ -413,6 +448,23 @@ function setThreadTerminalHeight(state: ThreadTerminalState, height: number): Th
   return { ...normalized, terminalHeight: height };
 }
 
+function setThreadTerminalPlacement(
+  state: ThreadTerminalState,
+  placement: TerminalPlacement,
+): ThreadTerminalState {
+  const normalized = normalizeThreadTerminalState(state);
+  if (normalized.terminalPlacement === placement) return normalized;
+  return { ...normalized, terminalPlacement: placement };
+}
+
+function toggleThreadTerminalPlacement(state: ThreadTerminalState): ThreadTerminalState {
+  const normalized = normalizeThreadTerminalState(state);
+  return {
+    ...normalized,
+    terminalPlacement: normalized.terminalPlacement === "bottom" ? "right" : "bottom",
+  };
+}
+
 function splitThreadTerminal(state: ThreadTerminalState, terminalId: string): ThreadTerminalState {
   return upsertTerminalIntoGroups(state, terminalId, "split");
 }
@@ -453,7 +505,7 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
 
   const remainingTerminalIds = normalized.terminalIds.filter((id) => id !== terminalId);
   if (remainingTerminalIds.length === 0) {
-    return createDefaultThreadTerminalState();
+    return createDefaultThreadTerminalState(normalized.terminalPlacement);
   }
 
   const closedTerminalIndex = normalized.terminalIds.indexOf(terminalId);
@@ -478,6 +530,7 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
 
   return normalizeThreadTerminalState({
     terminalOpen: normalized.terminalOpen,
+    terminalPlacement: normalized.terminalPlacement,
     terminalHeight: normalized.terminalHeight,
     terminalIds: remainingTerminalIds,
     runningTerminalIds: normalized.runningTerminalIds.filter((id) => id !== terminalId),
@@ -510,32 +563,41 @@ function setThreadTerminalActivity(
 }
 
 export function selectThreadTerminalState(
-  terminalStateByThreadKey: Record<string, ThreadTerminalState>,
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
   threadRef: ScopedThreadRef | null | undefined,
+  defaultTerminalPlacement: TerminalPlacement = defaultTerminalPlacementFromSettings(),
 ): ThreadTerminalState {
   if (!threadRef || threadRef.threadId.length === 0) {
-    return getDefaultThreadTerminalState();
+    return getDefaultThreadTerminalState(defaultTerminalPlacement);
   }
-  return terminalStateByThreadKey[terminalThreadKey(threadRef)] ?? getDefaultThreadTerminalState();
+  const persisted = terminalStateByThreadKey[terminalThreadKey(threadRef)];
+  return persisted
+    ? normalizeThreadTerminalState(persisted)
+    : getDefaultThreadTerminalState(defaultTerminalPlacement);
 }
 
 function updateTerminalStateByThreadKey(
-  terminalStateByThreadKey: Record<string, ThreadTerminalState>,
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
   threadRef: ScopedThreadRef,
   updater: (state: ThreadTerminalState) => ThreadTerminalState,
-): Record<string, ThreadTerminalState> {
+): Record<string, PersistedThreadTerminalState> {
   if (threadRef.threadId.length === 0) {
     return terminalStateByThreadKey;
   }
 
   const threadKey = terminalThreadKey(threadRef);
-  const current = selectThreadTerminalState(terminalStateByThreadKey, threadRef);
+  const defaultTerminalPlacement = defaultTerminalPlacementFromSettings();
+  const current = selectThreadTerminalState(
+    terminalStateByThreadKey,
+    threadRef,
+    defaultTerminalPlacement,
+  );
   const next = updater(current);
   if (next === current) {
     return terminalStateByThreadKey;
   }
 
-  if (isDefaultThreadTerminalState(next)) {
+  if (isDefaultThreadTerminalState(next, defaultTerminalPlacement)) {
     if (terminalStateByThreadKey[threadKey] === undefined) {
       return terminalStateByThreadKey;
     }
@@ -564,11 +626,13 @@ export function selectTerminalEventEntries(
 }
 
 interface TerminalStateStoreState {
-  terminalStateByThreadKey: Record<string, ThreadTerminalState>;
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>;
   terminalLaunchContextByThreadKey: Record<string, ThreadTerminalLaunchContext>;
   terminalEventEntriesByKey: Record<string, ReadonlyArray<TerminalEventEntry>>;
   nextTerminalEventId: number;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
+  setTerminalPlacement: (threadRef: ScopedThreadRef, placement: TerminalPlacement) => void;
+  toggleTerminalPlacement: (threadRef: ScopedThreadRef) => void;
   setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
   splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   newTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
@@ -625,6 +689,10 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
         nextTerminalEventId: 1,
         setTerminalOpen: (threadRef, open) =>
           updateTerminal(threadRef, (state) => setThreadTerminalOpen(state, open)),
+        setTerminalPlacement: (threadRef, placement) =>
+          updateTerminal(threadRef, (state) => setThreadTerminalPlacement(state, placement)),
+        toggleTerminalPlacement: (threadRef) =>
+          updateTerminal(threadRef, (state) => toggleThreadTerminalPlacement(state)),
         setTerminalHeight: (threadRef, height) =>
           updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
         splitTerminal: (threadRef, terminalId) =>
@@ -740,7 +808,7 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             const nextTerminalStateByThreadKey = updateTerminalStateByThreadKey(
               state.terminalStateByThreadKey,
               threadRef,
-              () => createDefaultThreadTerminalState(),
+              () => createDefaultThreadTerminalState(defaultTerminalPlacementFromSettings()),
             );
             const hadLaunchContext =
               state.terminalLaunchContextByThreadKey[threadKey] !== undefined;

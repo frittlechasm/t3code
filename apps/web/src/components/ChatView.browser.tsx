@@ -1910,6 +1910,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       terminalStateByThreadKey: {
         [THREAD_KEY]: {
           terminalOpen: true,
+          terminalPlacement: "bottom",
           terminalHeight: 280,
           terminalIds: ["default"],
           runningTerminalIds: [],
