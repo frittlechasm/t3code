@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getOpenRightPanel, isDiffPanelOpen, parseDiffRouteSearch } from "./diffRouteSearch";
+import { isDiffPanelOpen, parseDiffRouteSearch } from "./diffRouteSearch";
 
 describe("parseDiffRouteSearch", () => {
   it("parses valid diff search values", () => {
@@ -30,22 +30,19 @@ describe("parseDiffRouteSearch", () => {
       diffFilePath: "src/app.ts",
     });
     expect(isDiffPanelOpen(parsed)).toBe(true);
-    expect(getOpenRightPanel(parsed)).toBe("diff");
   });
 
-  it("parses tasks panel state", () => {
+  it("ignores tasks panel state because tasks use the chat sidebar", () => {
     const parsed = parseDiffRouteSearch({ panel: "tasks" });
 
-    expect(parsed).toEqual({ panel: "tasks" });
+    expect(parsed).toEqual({});
     expect(isDiffPanelOpen(parsed)).toBe(false);
-    expect(getOpenRightPanel(parsed)).toBe("tasks");
   });
 
   it("keeps legacy diff=1 as a compatibility alias", () => {
     const parsed = parseDiffRouteSearch({ diff: "1" });
 
     expect(isDiffPanelOpen(parsed)).toBe(true);
-    expect(getOpenRightPanel(parsed)).toBe("diff");
   });
 
   it("treats numeric and boolean diff toggles as open", () => {
@@ -106,11 +103,6 @@ describe("parseDiffRouteSearch", () => {
   it("ignores unknown panel values", () => {
     const parsed = parseDiffRouteSearch({ panel: "unknown" });
     expect(parsed).toEqual({});
-    expect(getOpenRightPanel(parsed)).toBe(null);
-  });
-
-  it("getOpenRightPanel returns null when nothing is open", () => {
-    expect(getOpenRightPanel({})).toBe(null);
   });
 
   it("isDiffPanelOpen is false for tasks panel", () => {

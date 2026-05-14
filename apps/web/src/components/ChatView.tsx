@@ -43,12 +43,7 @@ import { usePrimaryEnvironmentId } from "../environments/primary";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
-import {
-  getOpenRightPanel,
-  isDiffPanelOpen,
-  parseDiffRouteSearch,
-  stripDiffSearchParams,
-} from "../diffRouteSearch";
+import { isDiffPanelOpen, parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
 import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
@@ -345,7 +340,6 @@ type ChatViewProps =
       environmentId: EnvironmentId;
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
-      onTaskWindowPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       routeKind: "server";
       draftId?: never;
@@ -354,7 +348,6 @@ type ChatViewProps =
       environmentId: EnvironmentId;
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
-      onTaskWindowPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       routeKind: "draft";
       draftId: DraftId;
@@ -617,7 +610,6 @@ export default function ChatView(props: ChatViewProps) {
     threadId,
     routeKind,
     onDiffPanelOpen,
-    onTaskWindowPanelOpen,
     reserveTitleBarControlInset = true,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -821,7 +813,6 @@ export default function ChatView(props: ChatViewProps) {
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const diffOpen = isDiffPanelOpen(rawSearch);
-  const tasksOpen = getOpenRightPanel(rawSearch) === "tasks";
   const activeThreadId = activeThread?.id ?? null;
   const activeThreadRef = useMemo(
     () => (activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null),
@@ -1707,11 +1698,6 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
   );
-  const taskWindowShortcutLabel = useMemo(
-    () =>
-      shortcutLabelForCommand(keybindings, "taskWindow.toggle", nonTerminalShortcutLabelOptions),
-    [keybindings, nonTerminalShortcutLabelOptions],
-  );
   const onToggleDiff = useCallback(() => {
     if (!isServerThread) {
       return;
@@ -1734,27 +1720,6 @@ export default function ChatView(props: ChatViewProps) {
       },
     });
   }, [diffOpen, environmentId, isServerThread, navigate, onDiffPanelOpen, threadId]);
-
-  const onToggleTasks = useCallback(() => {
-    if (!isServerThread) {
-      return;
-    }
-    if (!tasksOpen) {
-      onTaskWindowPanelOpen?.();
-    }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId,
-        threadId,
-      },
-      replace: true,
-      search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return tasksOpen ? { ...rest, panel: undefined } : { ...rest, panel: "tasks" };
-      },
-    });
-  }, [environmentId, isServerThread, navigate, onTaskWindowPanelOpen, tasksOpen, threadId]);
 
   const envLocked = Boolean(
     activeThread &&
@@ -2557,7 +2522,7 @@ export default function ChatView(props: ChatViewProps) {
       if (command === "taskWindow.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        onToggleTasks();
+        togglePlanSidebar();
         return;
       }
 
@@ -2590,8 +2555,8 @@ export default function ChatView(props: ChatViewProps) {
     splitTerminal,
     keybindings,
     onToggleDiff,
-    onToggleTasks,
     toggleTerminalVisibility,
+    togglePlanSidebar,
   ]);
 
   const onRevertToTurnCount = useCallback(

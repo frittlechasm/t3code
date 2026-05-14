@@ -13,7 +13,6 @@ import {
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
-  getOpenRightPanel,
   isDiffPanelOpen,
   parseDiffRouteSearch,
   stripDiffSearchParams,
@@ -27,18 +26,12 @@ import { RightPanelSheet } from "../components/RightPanelSheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
-const TaskPanel = lazy(() => import("../components/TaskPanel"));
 
 const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(24rem,34vw,36rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 22 * 16;
 const DIFF_INLINE_SIDEBAR_MAX_WIDTH = 256 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
-
-const TASK_WINDOW_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_task_window_sidebar_width";
-const TASK_WINDOW_INLINE_DEFAULT_WIDTH = "clamp(20rem,28vw,32rem)";
-const TASK_WINDOW_INLINE_SIDEBAR_MIN_WIDTH = 18 * 16;
-const TASK_WINDOW_INLINE_SIDEBAR_MAX_WIDTH = 256 * 16;
 
 const DiffLoadingFallback = (props: { mode: DiffPanelMode }) => {
   return (
@@ -55,14 +48,6 @@ const LazyDiffPanel = (props: { mode: DiffPanelMode }) => {
         <DiffPanel mode={props.mode} />
       </Suspense>
     </DiffWorkerPoolProvider>
-  );
-};
-
-const LazyTaskPanel = (props: { mode: DiffPanelMode }) => {
-  return (
-    <Suspense fallback={<DiffPanelLoadingState label="Loading task window..." />}>
-      <TaskPanel mode={props.mode} />
-    </Suspense>
   );
 };
 
@@ -155,49 +140,6 @@ const DiffPanelInlineSidebar = (props: {
   );
 };
 
-const TaskPanelInlineSidebar = (props: {
-  tasksOpen: boolean;
-  onCloseTasks: () => void;
-  onOpenTasks: () => void;
-  renderTasksContent: boolean;
-}) => {
-  const { tasksOpen, onCloseTasks, onOpenTasks, renderTasksContent } = props;
-  const onOpenChange = useCallback(
-    (open: boolean) => {
-      if (open) {
-        onOpenTasks();
-        return;
-      }
-      onCloseTasks();
-    },
-    [onCloseTasks, onOpenTasks],
-  );
-
-  return (
-    <SidebarProvider
-      defaultOpen={false}
-      open={tasksOpen}
-      onOpenChange={onOpenChange}
-      className="w-auto min-h-0 flex-none bg-transparent"
-      style={{ "--sidebar-width": TASK_WINDOW_INLINE_DEFAULT_WIDTH } as React.CSSProperties}
-    >
-      <Sidebar
-        side="right"
-        collapsible="offcanvas"
-        className="border-l border-border bg-card text-foreground"
-        resizable={{
-          maxWidth: TASK_WINDOW_INLINE_SIDEBAR_MAX_WIDTH,
-          minWidth: TASK_WINDOW_INLINE_SIDEBAR_MIN_WIDTH,
-          storageKey: TASK_WINDOW_INLINE_SIDEBAR_WIDTH_STORAGE_KEY,
-        }}
-      >
-        {renderTasksContent ? <LazyTaskPanel mode="sidebar" /> : null}
-        <SidebarRail />
-      </Sidebar>
-    </SidebarProvider>
-  );
-};
-
 function ChatThreadRouteView() {
   const navigate = useNavigate();
   const threadRef = Route.useParams({
@@ -227,9 +169,7 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
-  const openPanel = getOpenRightPanel(search);
   const diffOpen = isDiffPanelOpen(search);
-  const tasksOpen = openPanel === "tasks";
   const shouldUseDiffSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
 
@@ -249,26 +189,6 @@ function ChatThreadRouteView() {
       return {
         threadKey: currentThreadKey,
         hasOpenedDiff: true,
-      };
-    });
-  }, [currentThreadKey]);
-
-  const [taskPanelMountState, setTaskPanelMountState] = useState(() => ({
-    threadKey: currentThreadKey,
-    hasOpenedTasks: tasksOpen,
-  }));
-  const hasOpenedTasks =
-    taskPanelMountState.threadKey === currentThreadKey
-      ? taskPanelMountState.hasOpenedTasks
-      : tasksOpen;
-  const markTasksOpened = useCallback(() => {
-    setTaskPanelMountState((previous) => {
-      if (previous.threadKey === currentThreadKey && previous.hasOpenedTasks) {
-        return previous;
-      }
-      return {
-        threadKey: currentThreadKey,
-        hasOpenedTasks: true,
       };
     });
   }, [currentThreadKey]);
@@ -298,31 +218,6 @@ function ChatThreadRouteView() {
     });
   }, [markDiffOpened, navigate, threadRef]);
 
-  const closeTasks = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-      search: { panel: undefined, diff: undefined, diffTurnId: undefined, diffFilePath: undefined },
-    });
-  }, [navigate, threadRef]);
-  const openTasks = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
-    markTasksOpened();
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-      search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return { ...rest, panel: "tasks" };
-      },
-    });
-  }, [markTasksOpened, navigate, threadRef]);
-
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
       return;
@@ -345,8 +240,6 @@ function ChatThreadRouteView() {
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
-  const shouldRenderTasksContent = tasksOpen || hasOpenedTasks;
-  const anyPanelOpen = diffOpen || tasksOpen;
 
   if (!shouldUseDiffSheet) {
     return (
@@ -356,8 +249,7 @@ function ChatThreadRouteView() {
             environmentId={threadRef.environmentId}
             threadId={threadRef.threadId}
             onDiffPanelOpen={markDiffOpened}
-            onTaskWindowPanelOpen={markTasksOpened}
-            reserveTitleBarControlInset={!anyPanelOpen}
+            reserveTitleBarControlInset={!diffOpen}
             routeKind="server"
           />
         </SidebarInset>
@@ -366,12 +258,6 @@ function ChatThreadRouteView() {
           onCloseDiff={closeDiff}
           onOpenDiff={openDiff}
           renderDiffContent={shouldRenderDiffContent}
-        />
-        <TaskPanelInlineSidebar
-          tasksOpen={tasksOpen}
-          onCloseTasks={closeTasks}
-          onOpenTasks={openTasks}
-          renderTasksContent={shouldRenderTasksContent}
         />
       </>
     );
@@ -384,15 +270,11 @@ function ChatThreadRouteView() {
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
           onDiffPanelOpen={markDiffOpened}
-          onTaskWindowPanelOpen={markTasksOpened}
           routeKind="server"
         />
       </SidebarInset>
       <RightPanelSheet open={diffOpen} onClose={closeDiff}>
         {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
-      </RightPanelSheet>
-      <RightPanelSheet open={tasksOpen} onClose={closeTasks}>
-        {shouldRenderTasksContent ? <LazyTaskPanel mode="sheet" /> : null}
       </RightPanelSheet>
     </>
   );
