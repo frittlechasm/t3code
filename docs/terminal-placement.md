@@ -108,19 +108,22 @@ Do not reuse **terminal view mode** for bottom-vs-right placement; it already me
 
 ### Session 1: Contracts and Settings Defaults
 
+Status: Completed on 2026-05-14.
+
 Goal: introduce the placement concept without changing chat layout.
 
-- Add `TerminalPlacement` and `DEFAULT_TERMINAL_PLACEMENT` to contracts.
-- Add `defaultTerminalPlacement` to client settings defaults and patches.
-- Add the General settings row beside terminal view mode.
-- Update desktop/client settings fixtures that require exhaustive `ClientSettings`.
-- Stop when settings can persist the new default and all checks pass.
+- [x] Add `TerminalPlacement` and `DEFAULT_TERMINAL_PLACEMENT` to contracts.
+- [x] Add `defaultTerminalPlacement` to client settings defaults and patches.
+- [x] Add the General settings row beside terminal view mode.
+- [x] Update desktop/client settings fixtures that require exhaustive `ClientSettings`.
+- [x] Stop when settings can persist the new default and all checks pass.
 
 Verification:
 
-- `bun run test packages/contracts/src/settings.test.ts` if a focused settings test exists or is added.
-- Relevant settings/component tests if touched.
-- `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] `bun run test src/settings.test.ts` from `packages/contracts`.
+- [x] `bun run test src/settings/DesktopClientSettings.test.ts` from `apps/desktop`.
+- [x] `bun run test src/localApi.test.ts` from `apps/web`.
+- [x] `bun fmt`, `bun lint`, `bun typecheck`.
 
 ### Session 2: Thread Placement State
 
