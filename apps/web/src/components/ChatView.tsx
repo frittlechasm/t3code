@@ -474,22 +474,26 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
   const project = useStore(useMemo(() => createProjectSelectorByRef(projectRef), [projectRef]));
-  const terminalState = useTerminalStateStore((state) =>
-    selectThreadTerminalState(state.terminalStateByThreadKey, threadRef),
+  const terminalState = useTerminalStateStore(
+    useShallow((state) =>
+      selectThreadTerminalState(state.terminalStateByThreadKey, threadRef),
+    ),
   );
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
   const logicalProjectKey = useMemo(
     () => (project ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings) : null),
     [project, projectGroupingSettings],
   );
-  const terminalDimensions = useTerminalStateStore((state) =>
-    selectLogicalProjectTerminalDimensions(
-      state.terminalDimensionsByLogicalProjectKey,
-      logicalProjectKey,
-      {
-        terminalStateByThreadKey: state.terminalStateByThreadKey,
-        threadRef,
-      },
+  const terminalDimensions = useTerminalStateStore(
+    useShallow((state) =>
+      selectLogicalProjectTerminalDimensions(
+        state.terminalDimensionsByLogicalProjectKey,
+        logicalProjectKey,
+        {
+          terminalStateByThreadKey: state.terminalStateByThreadKey,
+          threadRef,
+        },
+      ),
     ),
   );
   const hasPersistedTerminalDimensions = useTerminalStateStore((state) =>
@@ -788,8 +792,10 @@ export default function ChatView(props: ChatViewProps) {
   const sendInFlightRef = useRef(false);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
 
-  const terminalState = useTerminalStateStore((state) =>
-    selectThreadTerminalState(state.terminalStateByThreadKey, routeThreadRef),
+  const terminalState = useTerminalStateStore(
+    useShallow((state) =>
+      selectThreadTerminalState(state.terminalStateByThreadKey, routeThreadRef),
+    ),
   );
   const openTerminalThreadKeys = useTerminalStateStore(
     useShallow((state) =>
