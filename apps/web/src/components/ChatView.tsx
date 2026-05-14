@@ -799,6 +799,7 @@ export default function ChatView(props: ChatViewProps) {
     ),
   );
   const storeSetTerminalOpen = useTerminalStateStore((s) => s.setTerminalOpen);
+  const storeToggleTerminalPlacement = useTerminalStateStore((s) => s.toggleTerminalPlacement);
   const storeSplitTerminal = useTerminalStateStore((s) => s.splitTerminal);
   const storeNewTerminal = useTerminalStateStore((s) => s.newTerminal);
   const storeSetActiveTerminal = useTerminalStateStore((s) => s.setActiveTerminal);
@@ -1855,6 +1856,10 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     setTerminalOpen(!terminalState.terminalOpen);
   }, [activeThreadRef, setTerminalOpen, terminalState.terminalOpen]);
+  const toggleTerminalPlacement = useCallback(() => {
+    if (!activeThreadRef) return;
+    storeToggleTerminalPlacement(activeThreadRef);
+  }, [activeThreadRef, storeToggleTerminalPlacement]);
   const splitTerminal = useCallback(() => {
     if (!activeThreadRef || hasReachedSplitLimit) return;
     const terminalId = `terminal-${randomUUID()}`;
@@ -2618,6 +2623,13 @@ export default function ChatView(props: ChatViewProps) {
       event.preventDefault();
       event.stopPropagation();
       toggleTerminalVisibility();
+      return;
+    }
+
+    if (terminalAction === "togglePlacement") {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleTerminalPlacement();
       return;
     }
 

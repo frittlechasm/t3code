@@ -49,6 +49,7 @@ interface EffectiveShortcutLookup {
 
 export type TerminalShortcutAction =
   | "toggle"
+  | "togglePlacement"
   | "split"
   | "new"
   | "close"
@@ -420,6 +421,14 @@ export function isTerminalToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "terminal.toggle", options);
 }
 
+export function isTerminalTogglePlacementShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "terminal.togglePlacement", options);
+}
+
 export function isTerminalSplitShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
@@ -498,6 +507,8 @@ export function terminalShortcutActionFromCommand(
   switch (command) {
     case "terminal.toggle":
       return "toggle";
+    case "terminal.togglePlacement":
+      return "togglePlacement";
     case "terminal.split":
       return "split";
     case "terminal.new":
