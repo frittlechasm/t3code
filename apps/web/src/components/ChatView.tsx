@@ -87,6 +87,7 @@ import {
 } from "../proposedPlan";
 import {
   DEFAULT_INTERACTION_MODE,
+  DEFAULT_THREAD_TERMINAL_HEIGHT,
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
@@ -147,7 +148,11 @@ import {
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
-import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
+import {
+  selectLogicalProjectTerminalDimensions,
+  selectThreadTerminalState,
+  useTerminalStateStore,
+} from "../terminalStateStore";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -472,6 +477,26 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const terminalState = useTerminalStateStore((state) =>
     selectThreadTerminalState(state.terminalStateByThreadKey, threadRef),
   );
+  const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
+  const logicalProjectKey = useMemo(
+    () => (project ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings) : null),
+    [project, projectGroupingSettings],
+  );
+  const terminalDimensions = useTerminalStateStore((state) =>
+    selectLogicalProjectTerminalDimensions(
+      state.terminalDimensionsByLogicalProjectKey,
+      logicalProjectKey,
+      {
+        terminalStateByThreadKey: state.terminalStateByThreadKey,
+        threadRef,
+      },
+    ),
+  );
+  const hasPersistedTerminalDimensions = useTerminalStateStore((state) =>
+    logicalProjectKey
+      ? state.terminalDimensionsByLogicalProjectKey[logicalProjectKey] !== undefined
+      : false,
+  );
   const storeSetTerminalHeight = useTerminalStateStore((state) => state.setTerminalHeight);
   const storeSplitTerminal = useTerminalStateStore((state) => state.splitTerminal);
   const storeNewTerminal = useTerminalStateStore((state) => state.newTerminal);
@@ -516,10 +541,29 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
 
   const setTerminalHeight = useCallback(
     (height: number) => {
-      storeSetTerminalHeight(threadRef, height);
+      if (!logicalProjectKey) {
+        return;
+      }
+      storeSetTerminalHeight(logicalProjectKey, height);
     },
-    [storeSetTerminalHeight, threadRef],
+    [logicalProjectKey, storeSetTerminalHeight],
   );
+
+  useEffect(() => {
+    if (
+      !logicalProjectKey ||
+      hasPersistedTerminalDimensions ||
+      terminalDimensions.terminalHeight === DEFAULT_THREAD_TERMINAL_HEIGHT
+    ) {
+      return;
+    }
+    storeSetTerminalHeight(logicalProjectKey, terminalDimensions.terminalHeight);
+  }, [
+    hasPersistedTerminalDimensions,
+    logicalProjectKey,
+    storeSetTerminalHeight,
+    terminalDimensions.terminalHeight,
+  ]);
 
   const splitTerminal = useCallback(() => {
     storeSplitTerminal(threadRef, `terminal-${randomUUID()}`);
@@ -591,7 +635,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         worktreePath={effectiveWorktreePath}
         runtimeEnv={runtimeEnv}
         visible={visible}
-        height={terminalState.terminalHeight}
+        height={terminalDimensions.terminalHeight}
         viewMode={viewMode}
         terminalIds={terminalState.terminalIds}
         activeTerminalId={terminalState.activeTerminalId}

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   migratePersistedTerminalStateStoreState,
+  selectLogicalProjectTerminalDimensions,
   selectTerminalEventEntries,
   selectThreadTerminalState,
   useTerminalStateStore,
@@ -12,6 +13,8 @@ import {
 const THREAD_ID = ThreadId.make("thread-1");
 const THREAD_REF = scopeThreadRef("environment-a" as never, THREAD_ID);
 const OTHER_THREAD_REF = scopeThreadRef("environment-b" as never, THREAD_ID);
+const LOGICAL_PROJECT_KEY = "repo:owner/project";
+const OTHER_LOGICAL_PROJECT_KEY = "repo:owner/project:other";
 
 function makeTerminalEvent(
   type: TerminalEvent["type"],
@@ -61,6 +64,7 @@ describe("terminalStateStore actions", () => {
     useTerminalStateStore.persist.clearStorage();
     useTerminalStateStore.setState({
       terminalStateByThreadKey: {},
+      terminalDimensionsByLogicalProjectKey: {},
       terminalLaunchContextByThreadKey: {},
       terminalEventEntriesByKey: {},
       nextTerminalEventId: 1,
@@ -75,7 +79,6 @@ describe("terminalStateStore actions", () => {
     expect(terminalState).toEqual({
       terminalOpen: false,
       terminalPlacement: "bottom",
-      terminalHeight: 280,
       terminalIds: ["default"],
       runningTerminalIds: [],
       activeTerminalId: "default",
@@ -247,6 +250,7 @@ describe("terminalStateStore actions", () => {
           activeTerminalGroupId: "group-default",
         },
       },
+      terminalDimensionsByLogicalProjectKey: {},
     });
   });
 
@@ -272,6 +276,86 @@ describe("terminalStateStore actions", () => {
       selectThreadTerminalState(migrated.terminalStateByThreadKey ?? {}, THREAD_REF)
         .terminalPlacement,
     ).toBe("bottom");
+  });
+
+  it("returns default terminal dimensions for unknown logical projects", () => {
+    const dimensions = selectLogicalProjectTerminalDimensions(
+      useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+      LOGICAL_PROJECT_KEY,
+    );
+
+    expect(dimensions).toEqual({
+      terminalHeight: 280,
+      terminalWidth: 420,
+    });
+  });
+
+  it("persists terminal dimensions by logical project", () => {
+    const store = useTerminalStateStore.getState();
+
+    store.setTerminalHeight(LOGICAL_PROJECT_KEY, 340);
+    store.setTerminalWidth(LOGICAL_PROJECT_KEY, 520);
+
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        LOGICAL_PROJECT_KEY,
+      ),
+    ).toEqual({
+      terminalHeight: 340,
+      terminalWidth: 520,
+    });
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        OTHER_LOGICAL_PROJECT_KEY,
+      ),
+    ).toEqual({
+      terminalHeight: 280,
+      terminalWidth: 420,
+    });
+  });
+
+  it("shares terminal dimensions across equivalent environments with the same logical project", () => {
+    const store = useTerminalStateStore.getState();
+
+    store.setTerminalHeight(LOGICAL_PROJECT_KEY, 360);
+
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        LOGICAL_PROJECT_KEY,
+      ).terminalHeight,
+    ).toBe(360);
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        LOGICAL_PROJECT_KEY,
+      ).terminalHeight,
+    ).toBe(360);
+  });
+
+  it("uses legacy thread terminal height as a logical-project fallback", () => {
+    const dimensions = selectLogicalProjectTerminalDimensions({}, LOGICAL_PROJECT_KEY, {
+      terminalStateByThreadKey: {
+        [scopedThreadKey(THREAD_REF)]: {
+          terminalOpen: true,
+          terminalPlacement: "bottom",
+          terminalHeight: 335,
+          terminalIds: ["default"],
+          runningTerminalIds: [],
+          activeTerminalId: "default",
+          terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+          activeTerminalGroupId: "group-default",
+        },
+      },
+      threadRef: THREAD_REF,
+    });
+
+    expect(dimensions).toEqual({
+      terminalHeight: 335,
+      terminalWidth: 420,
+    });
   });
 
   it("sets and toggles terminal placement without opening the drawer", () => {
