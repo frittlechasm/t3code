@@ -1,6 +1,6 @@
 import { TurnId } from "@t3tools/contracts";
 
-export type RightPanelRoutePanel = "diff" | "tasks";
+export type RightPanelRoutePanel = "diff";
 
 export interface DiffRouteSearch {
   panel?: RightPanelRoutePanel | undefined;
@@ -22,7 +22,7 @@ function normalizeSearchString(value: unknown): string | undefined {
 }
 
 function normalizePanel(value: unknown): RightPanelRoutePanel | undefined {
-  return value === "diff" || value === "tasks" ? value : undefined;
+  return value === "diff" ? value : undefined;
 }
 
 export function stripDiffSearchParams<T extends Record<string, unknown>>(
@@ -40,11 +40,6 @@ export function stripDiffSearchParams<T extends Record<string, unknown>>(
 
 export function isDiffPanelOpen(search: Pick<DiffRouteSearch, "panel" | "diff">): boolean {
   return search.panel === "diff" || search.diff === "1";
-}
-
-export function getOpenRightPanel(search: DiffRouteSearch): RightPanelRoutePanel | null {
-  if (search.panel) return search.panel;
-  return search.diff === "1" ? "diff" : null;
 }
 
 export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRouteSearch {
