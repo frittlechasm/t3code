@@ -1412,7 +1412,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const diffResult = yield* executeGit("GitVcsDriver.getFileDiff", input.cwd, diffArgs, {
         allowNonZeroExit: true,
         maxOutputBytes: maxBytes + 1,
-        truncateOutputAtMaxBytes: true,
+        appendTruncationMarker: true,
       });
       if (diffResult.exitCode !== 0) {
         const detail = diffResult.stderr.trim() || "git diff failed";
@@ -1434,7 +1434,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           {
             allowNonZeroExit: true,
             maxOutputBytes: maxBytes + 1,
-            truncateOutputAtMaxBytes: true,
+            appendTruncationMarker: true,
           },
         );
         const isUntracked = untrackedResult.stdout
@@ -1458,7 +1458,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             {
               allowNonZeroExit: true,
               maxOutputBytes: maxBytes + 1,
-              truncateOutputAtMaxBytes: true,
+              appendTruncationMarker: true,
             },
           );
           patch = untrackedDiffResult.stdout;
