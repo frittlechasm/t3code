@@ -162,20 +162,23 @@ Verification:
 
 ### Session 4: Keybinding Command
 
+Status: Completed on 2026-05-14.
+
 Goal: make placement toggling available through the keybinding system.
 
-- Add `terminal.togglePlacement` to keybinding contracts.
-- Add default `mod+shift+j`.
-- Add label/action plumbing in web keybinding helpers.
-- Wire global shortcut handling to update only the active thread's placement.
-- Stop before adding the visible toolbar button.
+- [x] Add `terminal.togglePlacement` to keybinding contracts.
+- [x] Add default `mod+shift+j`.
+- [x] Add label/action plumbing in web keybinding helpers.
+- [x] Wire global shortcut handling to update only the active thread's placement.
+- [x] Stop before adding the visible toolbar button.
 
 Verification:
 
-- `bun run test packages/contracts/src/keybindings.test.ts`.
-- `bun run test apps/web/src/keybindings.test.ts`.
-- Any focused `ChatView` shortcut test if added.
-- `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] `bun run test src/keybindings.test.ts` from `packages/contracts`.
+- [x] `bun run test src/keybindings.test.ts src/components/settings/KeybindingsSettings.logic.test.ts` from `apps/web`.
+- [x] `bun run test src/keybindings.test.ts` from `apps/server`.
+- [x] `bun run test:browser src/components/ChatView.browser.tsx` from `apps/web`.
+- [x] `bun fmt`, `bun lint`, `bun typecheck`.
 
 ### Session 5: Right Placement Layout
 

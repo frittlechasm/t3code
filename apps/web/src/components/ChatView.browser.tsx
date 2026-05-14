@@ -55,7 +55,7 @@ import { getServerConfig } from "../rpc/serverState";
 import { getRouter } from "../router";
 import { deriveLogicalProjectKeyFromSettings } from "../logicalProject";
 import { selectBootstrapCompleteForActiveEnvironment, useStore } from "../store";
-import { useTerminalStateStore } from "../terminalStateStore";
+import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import { createAuthenticatedSessionHandlers } from "../../test/authHttpHandlers";
 import { BrowserWsRpcHarness, type NormalizedWsRpcRequestBody } from "../../test/wsRpcHarness";
@@ -1455,6 +1455,20 @@ function dispatchChatNewShortcut(): void {
   window.dispatchEvent(
     new KeyboardEvent("keydown", {
       key: "o",
+      shiftKey: true,
+      metaKey: useMetaForMod,
+      ctrlKey: !useMetaForMod,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function dispatchTerminalPlacementShortcut(): void {
+  const useMetaForMod = isMacPlatform(navigator.platform);
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "j",
       shiftKey: true,
       metaKey: useMetaForMod,
       ctrlKey: !useMetaForMod,
@@ -6147,6 +6161,64 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
     } finally {
       releaseModShortcut("Control");
+      await mounted.cleanup();
+    }
+  });
+
+  it("toggles the active thread terminal placement without opening the drawer", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-terminal-placement-hotkey" as MessageId,
+        targetText: "terminal placement hotkey target",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          keybindings: [
+            {
+              command: "terminal.togglePlacement",
+              shortcut: {
+                key: "j",
+                modKey: true,
+                metaKey: false,
+                ctrlKey: false,
+                altKey: false,
+                shiftKey: true,
+              },
+            },
+          ],
+        };
+      },
+    });
+
+    try {
+      await waitForServerConfigToApply();
+
+      expect(useTerminalStateStore.getState().terminalStateByThreadKey[THREAD_KEY]).toBeUndefined();
+
+      dispatchTerminalPlacementShortcut();
+      await vi.waitFor(() => {
+        expect(
+          useTerminalStateStore.getState().terminalStateByThreadKey[THREAD_KEY]?.terminalPlacement,
+        ).toBe("right");
+      });
+
+      expect(
+        useTerminalStateStore.getState().terminalStateByThreadKey[THREAD_KEY]?.terminalOpen,
+      ).toBe(false);
+
+      dispatchTerminalPlacementShortcut();
+      await vi.waitFor(() => {
+        expect(
+          selectThreadTerminalState(
+            useTerminalStateStore.getState().terminalStateByThreadKey,
+            THREAD_REF,
+          ).terminalPlacement,
+        ).toBe("bottom");
+      });
+    } finally {
+      releaseModShortcut();
       await mounted.cleanup();
     }
   });

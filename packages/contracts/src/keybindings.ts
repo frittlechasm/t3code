@@ -49,6 +49,7 @@ export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMA
 
 const STATIC_KEYBINDING_COMMANDS = [
   "terminal.toggle",
+  "terminal.togglePlacement",
   "terminal.split",
   "terminal.new",
   "terminal.close",

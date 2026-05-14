@@ -20,6 +20,7 @@ import {
   isTerminalSplitShortcut,
   isTerminalTabNextShortcut,
   isTerminalTabPreviousShortcut,
+  isTerminalTogglePlacementShortcut,
   isTerminalToggleShortcut,
   isNativeTerminalNewTabShortcut,
   nativeTerminalTabTraversalDirection,
@@ -29,6 +30,7 @@ import {
   shortcutLabelForCommand,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
+  terminalShortcutActionFromCommand,
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
   threadTraversalDirectionFromCommand,
@@ -89,6 +91,7 @@ function compile(bindings: TestBinding[]): ResolvedKeybindingsConfig {
 
 const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("j"), command: "terminal.toggle" },
+  { shortcut: modShortcut("j", { shiftKey: true }), command: "terminal.togglePlacement" },
   {
     shortcut: modShortcut("d"),
     command: "terminal.split",
@@ -180,6 +183,31 @@ describe("isTerminalToggleShortcut", () => {
         platform: "Win32",
         context: { terminalFocus: true },
       }),
+    );
+  });
+});
+
+describe("isTerminalTogglePlacementShortcut", () => {
+  it("matches Mod+Shift+J without requiring the terminal to be open", () => {
+    assert.isTrue(
+      isTerminalTogglePlacementShortcut(
+        event({ key: "j", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalOpen: false, terminalFocus: false },
+        },
+      ),
+    );
+    assert.isTrue(
+      isTerminalTogglePlacementShortcut(
+        event({ key: "j", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+          context: { terminalOpen: false, terminalFocus: true },
+        },
+      ),
     );
   });
 });
@@ -434,6 +462,10 @@ describe("shortcutLabelForCommand", () => {
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.jump.3", "MacIntel"),
       "⌘3",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.togglePlacement", "MacIntel"),
+      "⇧⌘J",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.previous", "Linux"),
@@ -742,6 +774,15 @@ describe("formatShortcutLabel", () => {
   it("formats labels for plus key", () => {
     assert.strictEqual(formatShortcutLabel(modShortcut("+"), "MacIntel"), "⌘+");
     assert.strictEqual(formatShortcutLabel(modShortcut("+"), "Linux"), "Ctrl++");
+  });
+});
+
+describe("terminalShortcutActionFromCommand", () => {
+  it("maps terminal.togglePlacement to a placement-only action", () => {
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.togglePlacement"),
+      "togglePlacement",
+    );
   });
 });
 
