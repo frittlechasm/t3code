@@ -15,6 +15,7 @@ import { resolveStorage } from "./lib/storage";
 import { terminalRunningSubprocessFromEvent } from "./terminalActivity";
 import {
   DEFAULT_THREAD_TERMINAL_HEIGHT,
+  DEFAULT_THREAD_TERMINAL_WIDTH,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ThreadTerminalGroup,
@@ -23,12 +24,16 @@ import {
 interface ThreadTerminalState {
   terminalOpen: boolean;
   terminalPlacement: TerminalPlacement;
-  terminalHeight: number;
   terminalIds: string[];
   runningTerminalIds: string[];
   activeTerminalId: string;
   terminalGroups: ThreadTerminalGroup[];
   activeTerminalGroupId: string;
+}
+
+export interface LogicalProjectTerminalDimensions {
+  terminalHeight: number;
+  terminalWidth: number;
 }
 
 export interface ThreadTerminalLaunchContext {
@@ -47,26 +52,42 @@ const MAX_TERMINAL_EVENT_BUFFER = 200;
 
 interface PersistedTerminalStateStoreState {
   terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;
+  terminalDimensionsByLogicalProjectKey?: Record<string, PersistedLogicalProjectTerminalDimensions>;
 }
 
 type PersistedThreadTerminalState = Omit<ThreadTerminalState, "terminalPlacement"> & {
   terminalPlacement?: TerminalPlacement;
+  terminalHeight?: number;
 };
+
+type PersistedLogicalProjectTerminalDimensions = Partial<LogicalProjectTerminalDimensions>;
 
 export function migratePersistedTerminalStateStoreState(
   persistedState: unknown,
   version: number,
 ): PersistedTerminalStateStoreState {
-  if ((version === 1 || version === 2) && persistedState && typeof persistedState === "object") {
+  if (
+    (version === 1 || version === 2 || version === 3) &&
+    persistedState &&
+    typeof persistedState === "object"
+  ) {
     const candidate = persistedState as PersistedTerminalStateStoreState;
     const nextTerminalStateByThreadKey = Object.fromEntries(
       Object.entries(candidate.terminalStateByThreadKey ?? {}).filter(([threadKey]) =>
         parseScopedThreadKey(threadKey),
       ),
     );
-    return { terminalStateByThreadKey: nextTerminalStateByThreadKey };
+    const nextTerminalDimensionsByLogicalProjectKey = Object.fromEntries(
+      Object.entries(candidate.terminalDimensionsByLogicalProjectKey ?? {}).filter(
+        ([logicalProjectKey]) => logicalProjectKey.trim().length > 0,
+      ),
+    );
+    return {
+      terminalStateByThreadKey: nextTerminalStateByThreadKey,
+      terminalDimensionsByLogicalProjectKey: nextTerminalDimensionsByLogicalProjectKey,
+    };
   }
-  return { terminalStateByThreadKey: {} };
+  return { terminalStateByThreadKey: {}, terminalDimensionsByLogicalProjectKey: {} };
 }
 
 function createTerminalStateStorage() {
@@ -188,7 +209,6 @@ function threadTerminalStateEqual(left: ThreadTerminalState, right: ThreadTermin
   return (
     left.terminalOpen === right.terminalOpen &&
     left.terminalPlacement === right.terminalPlacement &&
-    left.terminalHeight === right.terminalHeight &&
     left.activeTerminalId === right.activeTerminalId &&
     left.activeTerminalGroupId === right.activeTerminalGroupId &&
     arraysEqual(left.terminalIds, right.terminalIds) &&
@@ -200,7 +220,6 @@ function threadTerminalStateEqual(left: ThreadTerminalState, right: ThreadTermin
 const DEFAULT_THREAD_TERMINAL_STATE: ThreadTerminalState = Object.freeze({
   terminalOpen: false,
   terminalPlacement: DEFAULT_TERMINAL_PLACEMENT,
-  terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
   terminalIds: [DEFAULT_THREAD_TERMINAL_ID],
   runningTerminalIds: [],
   activeTerminalId: DEFAULT_THREAD_TERMINAL_ID,
@@ -211,6 +230,11 @@ const DEFAULT_THREAD_TERMINAL_STATE: ThreadTerminalState = Object.freeze({
     },
   ],
   activeTerminalGroupId: fallbackGroupId(DEFAULT_THREAD_TERMINAL_ID),
+});
+
+const DEFAULT_TERMINAL_DIMENSIONS: LogicalProjectTerminalDimensions = Object.freeze({
+  terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
+  terminalWidth: DEFAULT_THREAD_TERMINAL_WIDTH,
 });
 
 function createDefaultThreadTerminalState(
@@ -261,10 +285,6 @@ function normalizeThreadTerminalState(state: PersistedThreadTerminalState): Thre
   const normalized: ThreadTerminalState = {
     terminalOpen: state.terminalOpen,
     terminalPlacement: normalizeTerminalPlacement(state.terminalPlacement),
-    terminalHeight:
-      Number.isFinite(state.terminalHeight) && state.terminalHeight > 0
-        ? state.terminalHeight
-        : DEFAULT_THREAD_TERMINAL_HEIGHT,
     terminalIds: nextTerminalIds,
     runningTerminalIds,
     activeTerminalId,
@@ -294,6 +314,10 @@ function isDefaultThreadTerminalState(
 
 function isValidTerminalId(terminalId: string): boolean {
   return terminalId.trim().length > 0;
+}
+
+function logicalProjectTerminalDimensionsKey(logicalProjectKey: string): string {
+  return logicalProjectKey.trim();
 }
 
 function terminalThreadKey(threadRef: ScopedThreadRef): string {
@@ -440,14 +464,6 @@ function setThreadTerminalOpen(state: ThreadTerminalState, open: boolean): Threa
   return { ...normalized, terminalOpen: open };
 }
 
-function setThreadTerminalHeight(state: ThreadTerminalState, height: number): ThreadTerminalState {
-  const normalized = normalizeThreadTerminalState(state);
-  if (!Number.isFinite(height) || height <= 0 || normalized.terminalHeight === height) {
-    return normalized;
-  }
-  return { ...normalized, terminalHeight: height };
-}
-
 function setThreadTerminalPlacement(
   state: ThreadTerminalState,
   placement: TerminalPlacement,
@@ -531,13 +547,49 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
   return normalizeThreadTerminalState({
     terminalOpen: normalized.terminalOpen,
     terminalPlacement: normalized.terminalPlacement,
-    terminalHeight: normalized.terminalHeight,
     terminalIds: remainingTerminalIds,
     runningTerminalIds: normalized.runningTerminalIds.filter((id) => id !== terminalId),
     activeTerminalId: nextActiveTerminalId,
     terminalGroups,
     activeTerminalGroupId: nextActiveTerminalGroupId,
   });
+}
+
+function normalizeTerminalDimension(value: unknown, fallback: number): number {
+  return Number.isFinite(value) && typeof value === "number" && value > 0 ? value : fallback;
+}
+
+function normalizeLogicalProjectTerminalDimensions(
+  dimensions: PersistedLogicalProjectTerminalDimensions | undefined,
+  fallbackHeight: number = DEFAULT_THREAD_TERMINAL_HEIGHT,
+): LogicalProjectTerminalDimensions {
+  return {
+    terminalHeight: normalizeTerminalDimension(dimensions?.terminalHeight, fallbackHeight),
+    terminalWidth: normalizeTerminalDimension(
+      dimensions?.terminalWidth,
+      DEFAULT_THREAD_TERMINAL_WIDTH,
+    ),
+  };
+}
+
+function logicalProjectTerminalDimensionsEqual(
+  left: LogicalProjectTerminalDimensions,
+  right: LogicalProjectTerminalDimensions,
+): boolean {
+  return left.terminalHeight === right.terminalHeight && left.terminalWidth === right.terminalWidth;
+}
+
+function legacyTerminalHeightForThread(
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
+  threadRef: ScopedThreadRef | null | undefined,
+): number | undefined {
+  if (!threadRef || threadRef.threadId.length === 0) {
+    return undefined;
+  }
+  const legacyHeight = terminalStateByThreadKey[terminalThreadKey(threadRef)]?.terminalHeight;
+  return Number.isFinite(legacyHeight) && typeof legacyHeight === "number" && legacyHeight > 0
+    ? legacyHeight
+    : undefined;
 }
 
 function setThreadTerminalActivity(
@@ -574,6 +626,30 @@ export function selectThreadTerminalState(
   return persisted
     ? normalizeThreadTerminalState(persisted)
     : getDefaultThreadTerminalState(defaultTerminalPlacement);
+}
+
+export function selectLogicalProjectTerminalDimensions(
+  terminalDimensionsByLogicalProjectKey: Record<string, PersistedLogicalProjectTerminalDimensions>,
+  logicalProjectKey: string | null | undefined,
+  options?: {
+    terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;
+    threadRef?: ScopedThreadRef | null | undefined;
+  },
+): LogicalProjectTerminalDimensions {
+  const fallbackHeight =
+    legacyTerminalHeightForThread(options?.terminalStateByThreadKey ?? {}, options?.threadRef) ??
+    DEFAULT_THREAD_TERMINAL_HEIGHT;
+  const normalizedLogicalProjectKey =
+    typeof logicalProjectKey === "string"
+      ? logicalProjectTerminalDimensionsKey(logicalProjectKey)
+      : "";
+  if (normalizedLogicalProjectKey.length === 0) {
+    return normalizeLogicalProjectTerminalDimensions(undefined, fallbackHeight);
+  }
+  return normalizeLogicalProjectTerminalDimensions(
+    terminalDimensionsByLogicalProjectKey[normalizedLogicalProjectKey],
+    fallbackHeight,
+  );
 }
 
 function updateTerminalStateByThreadKey(
@@ -627,13 +703,15 @@ export function selectTerminalEventEntries(
 
 interface TerminalStateStoreState {
   terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>;
+  terminalDimensionsByLogicalProjectKey: Record<string, PersistedLogicalProjectTerminalDimensions>;
   terminalLaunchContextByThreadKey: Record<string, ThreadTerminalLaunchContext>;
   terminalEventEntriesByKey: Record<string, ReadonlyArray<TerminalEventEntry>>;
   nextTerminalEventId: number;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
   setTerminalPlacement: (threadRef: ScopedThreadRef, placement: TerminalPlacement) => void;
   toggleTerminalPlacement: (threadRef: ScopedThreadRef) => void;
-  setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
+  setTerminalHeight: (logicalProjectKey: string, height: number) => void;
+  setTerminalWidth: (logicalProjectKey: string, width: number) => void;
   splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   newTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   ensureTerminal: (
@@ -681,9 +759,47 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
           };
         });
       };
+      const updateTerminalDimensions = (
+        logicalProjectKey: string,
+        updater: (dimensions: LogicalProjectTerminalDimensions) => LogicalProjectTerminalDimensions,
+      ) => {
+        set((state) => {
+          const dimensionKey = logicalProjectTerminalDimensionsKey(logicalProjectKey);
+          if (dimensionKey.length === 0) {
+            return state;
+          }
+          const current = selectLogicalProjectTerminalDimensions(
+            state.terminalDimensionsByLogicalProjectKey,
+            dimensionKey,
+          );
+          const next = updater(current);
+          if (
+            next === current ||
+            logicalProjectTerminalDimensionsEqual(current, next) ||
+            logicalProjectTerminalDimensionsEqual(next, DEFAULT_TERMINAL_DIMENSIONS)
+          ) {
+            if (
+              logicalProjectTerminalDimensionsEqual(next, DEFAULT_TERMINAL_DIMENSIONS) &&
+              state.terminalDimensionsByLogicalProjectKey[dimensionKey] !== undefined
+            ) {
+              const { [dimensionKey]: _removed, ...rest } =
+                state.terminalDimensionsByLogicalProjectKey;
+              return { terminalDimensionsByLogicalProjectKey: rest };
+            }
+            return state;
+          }
+          return {
+            terminalDimensionsByLogicalProjectKey: {
+              ...state.terminalDimensionsByLogicalProjectKey,
+              [dimensionKey]: next,
+            },
+          };
+        });
+      };
 
       return {
         terminalStateByThreadKey: {},
+        terminalDimensionsByLogicalProjectKey: {},
         terminalLaunchContextByThreadKey: {},
         terminalEventEntriesByKey: {},
         nextTerminalEventId: 1,
@@ -693,8 +809,20 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
           updateTerminal(threadRef, (state) => setThreadTerminalPlacement(state, placement)),
         toggleTerminalPlacement: (threadRef) =>
           updateTerminal(threadRef, (state) => toggleThreadTerminalPlacement(state)),
-        setTerminalHeight: (threadRef, height) =>
-          updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
+        setTerminalHeight: (logicalProjectKey, height) =>
+          updateTerminalDimensions(logicalProjectKey, (dimensions) => {
+            const terminalHeight = normalizeTerminalDimension(height, dimensions.terminalHeight);
+            return terminalHeight === dimensions.terminalHeight
+              ? dimensions
+              : { ...dimensions, terminalHeight };
+          }),
+        setTerminalWidth: (logicalProjectKey, width) =>
+          updateTerminalDimensions(logicalProjectKey, (dimensions) => {
+            const terminalWidth = normalizeTerminalDimension(width, dimensions.terminalWidth);
+            return terminalWidth === dimensions.terminalWidth
+              ? dimensions
+              : { ...dimensions, terminalWidth };
+          }),
         splitTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId)),
         newTerminal: (threadRef, terminalId) =>
@@ -904,11 +1032,12 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
     },
     {
       name: TERMINAL_STATE_STORAGE_KEY,
-      version: 2,
+      version: 3,
       storage: createJSONStorage(createTerminalStateStorage),
       migrate: migratePersistedTerminalStateStoreState,
       partialize: (state) => ({
         terminalStateByThreadKey: state.terminalStateByThreadKey,
+        terminalDimensionsByLogicalProjectKey: state.terminalDimensionsByLogicalProjectKey,
       }),
     },
   ),

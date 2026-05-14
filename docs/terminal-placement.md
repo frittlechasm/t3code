@@ -144,19 +144,21 @@ Verification:
 
 ### Session 3: Logical-Project Dimensions
 
+Status: Completed on 2026-05-14.
+
 Goal: persist terminal dimensions by logical project.
 
-- Add logical-project terminal dimension state for `terminalHeight` and `terminalWidth`.
-- Move bottom height persistence from thread state to logical-project dimension state.
-- Add right-width persistence without rendering right placement yet.
-- Preserve migration for existing thread `terminalHeight` values by seeding the active logical project where possible, or falling back to the default height when no project can be resolved.
-- Stop before visual layout changes.
+- [x] Add logical-project terminal dimension state for `terminalHeight` and `terminalWidth`.
+- [x] Move bottom height persistence from thread state to logical-project dimension state.
+- [x] Add right-width persistence without rendering right placement yet.
+- [x] Preserve migration for existing thread `terminalHeight` values by seeding the active logical project where possible, or falling back to the default height when no project can be resolved.
+- [x] Stop before visual layout changes.
 
 Verification:
 
-- `bun run test apps/web/src/terminalStateStore.test.ts`.
-- Add focused tests for logical-project dimension sharing across environments.
-- `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] `bun run test src/terminalStateStore.test.ts` from `apps/web`.
+- [x] Added focused tests for logical-project dimension persistence, sharing, and legacy height fallback.
+- [x] `bun fmt`, `bun lint`, `bun typecheck`.
 
 ### Session 4: Keybinding Command
 
