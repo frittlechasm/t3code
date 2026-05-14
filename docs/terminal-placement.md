@@ -127,18 +127,20 @@ Verification:
 
 ### Session 2: Thread Placement State
 
+Status: Completed on 2026-05-14.
+
 Goal: persist placement per thread and wire non-layout actions.
 
-- Extend terminal thread state with `terminalPlacement`.
-- Make lazy terminal state initialization seed placement from `defaultTerminalPlacement`.
-- Add `setTerminalPlacement` and `toggleTerminalPlacement`.
-- Keep placement toggle independent from terminal open/closed state.
-- Stop before changing drawer layout.
+- [x] Extend terminal thread state with `terminalPlacement`.
+- [x] Make lazy terminal state initialization seed placement from `defaultTerminalPlacement`.
+- [x] Add `setTerminalPlacement` and `toggleTerminalPlacement`.
+- [x] Keep placement toggle independent from terminal open/closed state.
+- [x] Stop before changing drawer layout.
 
 Verification:
 
-- `bun run test apps/web/src/terminalStateStore.test.ts`.
-- `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] `bun run test src/terminalStateStore.test.ts` from `apps/web`.
+- [x] `bun fmt`, `bun lint`, `bun typecheck`.
 
 ### Session 3: Logical-Project Dimensions
 

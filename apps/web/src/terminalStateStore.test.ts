@@ -74,6 +74,7 @@ describe("terminalStateStore actions", () => {
     );
     expect(terminalState).toEqual({
       terminalOpen: false,
+      terminalPlacement: "bottom",
       terminalHeight: 280,
       terminalIds: ["default"],
       runningTerminalIds: [],
@@ -81,6 +82,19 @@ describe("terminalStateStore actions", () => {
       terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
       activeTerminalGroupId: "group-default",
     });
+  });
+
+  it("seeds unknown thread placement from the default terminal placement", () => {
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+      "right",
+    );
+
+    expect(terminalState.terminalPlacement).toBe("right");
+    expect(
+      useTerminalStateStore.getState().terminalStateByThreadKey[scopedThreadKey(THREAD_REF)],
+    ).toBeUndefined();
   });
 
   it("opens and splits terminals into the active group", () => {
@@ -197,6 +211,7 @@ describe("terminalStateStore actions", () => {
         terminalStateByThreadKey: {
           [scopedThreadKey(THREAD_REF)]: {
             terminalOpen: true,
+            terminalPlacement: "right",
             terminalHeight: 320,
             terminalIds: ["default"],
             runningTerminalIds: [],
@@ -206,6 +221,7 @@ describe("terminalStateStore actions", () => {
           },
           "legacy-thread-id": {
             terminalOpen: true,
+            terminalPlacement: "right",
             terminalHeight: 320,
             terminalIds: ["default"],
             runningTerminalIds: [],
@@ -222,6 +238,7 @@ describe("terminalStateStore actions", () => {
       terminalStateByThreadKey: {
         [scopedThreadKey(THREAD_REF)]: {
           terminalOpen: true,
+          terminalPlacement: "right",
           terminalHeight: 320,
           terminalIds: ["default"],
           runningTerminalIds: [],
@@ -231,6 +248,50 @@ describe("terminalStateStore actions", () => {
         },
       },
     });
+  });
+
+  it("defaults migrated legacy terminal state placement to bottom", () => {
+    const migrated = migratePersistedTerminalStateStoreState(
+      {
+        terminalStateByThreadKey: {
+          [scopedThreadKey(THREAD_REF)]: {
+            terminalOpen: true,
+            terminalHeight: 320,
+            terminalIds: ["default"],
+            runningTerminalIds: [],
+            activeTerminalId: "default",
+            terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+            activeTerminalGroupId: "group-default",
+          },
+        },
+      },
+      2,
+    );
+
+    expect(
+      selectThreadTerminalState(migrated.terminalStateByThreadKey ?? {}, THREAD_REF)
+        .terminalPlacement,
+    ).toBe("bottom");
+  });
+
+  it("sets and toggles terminal placement without opening the drawer", () => {
+    const store = useTerminalStateStore.getState();
+
+    store.setTerminalPlacement(THREAD_REF, "right");
+    let terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalPlacement).toBe("right");
+    expect(terminalState.terminalOpen).toBe(false);
+
+    store.toggleTerminalPlacement(THREAD_REF);
+    terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalPlacement).toBe("bottom");
+    expect(terminalState.terminalOpen).toBe(false);
   });
 
   it("tracks and clears terminal subprocess activity", () => {
