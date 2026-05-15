@@ -1,6 +1,6 @@
 # Terminal Placement Plan
 
-T3 Code currently renders the persistent terminal drawer at the bottom of the chat view. This plan adds a second placement, right side, plus a shortcut and a default setting so users can switch between bottom and right-hand terminal layouts without changing terminal sessions.
+T3 Code supports persistent terminal drawers at the bottom of the chat view or on the right side of the chat workspace. This plan records the placement model, implementation decisions, and verification history for that work.
 
 ## Canonical Terms
 
@@ -14,7 +14,8 @@ Do not reuse **terminal view mode** for bottom-vs-right placement; it already me
 
 - Terminal UI state lives in `apps/web/src/terminalStateStore.ts` and is keyed by scoped thread identity.
 - The terminal drawer component is `apps/web/src/components/ThreadTerminalDrawer.tsx`.
-- Chat layout composes the terminal after the main horizontal flex area in `apps/web/src/components/ChatView.tsx`, which makes the drawer bottom-mounted today.
+- Chat layout in `apps/web/src/components/ChatView.tsx` chooses an effective placement: bottom renders below the main workspace, while right renders inside the main horizontal workspace.
+- Narrow layouts force the effective placement to bottom without mutating the saved thread placement.
 - Keybinding commands are defined in `packages/contracts/src/keybindings.ts`, defaults in `packages/shared/src/keybindings.ts`, and resolution in `apps/web/src/keybindings.ts`.
 - Client settings live in `packages/contracts/src/settings.ts` and are edited in `apps/web/src/components/settings/SettingsPanels.tsx`.
 
@@ -35,7 +36,7 @@ Do not reuse **terminal view mode** for bottom-vs-right placement; it already me
 - Placement is UI-only; no server terminal lifecycle should restart because the drawer moves.
 - Terminal placement does not override terminal view mode.
 
-## Design Decisions To Resolve
+## Design Decisions
 
 1. Scope of placement persistence: global default plus thread override.
 2. Default shortcut: add an active default keybinding, while keeping the command configurable.
@@ -182,36 +183,36 @@ Verification:
 
 ### Session 5: Right Placement Layout
 
+Status: Completed on 2026-05-15.
+
 Goal: render the terminal drawer on the right without changing terminal session lifecycle.
 
-- Refactor `ChatView` so effective placement controls whether the drawer renders below or inside the main horizontal workspace.
-- Add right placement width sizing and resize handle.
-- Keep bottom placement height resizing unchanged.
-- Add narrow-screen `effectiveTerminalPlacement` fallback to bottom without mutating saved placement.
-- Ensure xterm fit recalculates on placement and dimension changes.
-- Stop before toolbar polish if the layout itself is not stable.
+- [x] Refactor `ChatView` so effective placement controls whether the drawer renders below or inside the main horizontal workspace.
+- [x] Add right placement width sizing and resize handle.
+- [x] Keep bottom placement height resizing unchanged.
+- [x] Add narrow-screen `effectiveTerminalPlacement` fallback to bottom without mutating saved placement.
+- [x] Ensure xterm fit recalculates after placement and dimension changes.
 
 Verification:
 
-- Existing `ThreadTerminalDrawer` browser tests.
-- New browser/UI coverage for moving an open terminal without re-opening its session.
-- Manual browser check for bottom, right, and narrow viewport behavior.
-- `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] `bun run test src/terminalStateStore.test.ts` from `apps/web`.
+- [x] `bun fmt`, `bun lint`, `bun typecheck`.
 
 ### Session 6: Toolbar Toggle and Polish
 
+Status: Completed on 2026-05-15.
+
 Goal: make placement discoverable in every drawer toolbar variant.
 
-- Add one compact placement toggle button to each drawer toolbar variant: single-terminal floating controls, tabs mode, and sidebar mode.
-- Include the configured shortcut label in the tooltip when available.
-- Verify plan sidebar, diff panel, branch toolbar, composer, and scroll-to-bottom behavior in both placements.
-- Tighten styling and accessible labels.
+- [x] Add one compact placement toggle button to each drawer toolbar variant: single-terminal floating controls, tabs mode, and sidebar mode.
+- [x] Include the configured shortcut label in the tooltip when available.
+- [x] Keep bottom resize syncing limited to `terminalHeight` and right resize syncing limited to `terminalWidth`.
+- [x] Tighten styling and accessible labels.
 
 Verification:
 
-- `ThreadTerminalDrawer` unit/browser tests for toolbar variants.
-- Manual browser check for single, tabs, and sidebar terminal view modes.
-- `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] `bun run test src/terminalStateStore.test.ts` from `apps/web`.
+- [x] `bun fmt`, `bun lint`, `bun typecheck`.
 
 ## Open Risks
 
