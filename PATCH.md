@@ -2,17 +2,15 @@
 
 ## Branch Scope
 
-This branch expands terminal UX and state management. It adds terminal tab/group navigation, split-terminal state, focus navigation inside split groups, a configurable terminal view mode, and the data/settings/keybinding foundation for future bottom-vs-right terminal placement.
+This branch expands terminal UX and state management. It adds terminal tab/group navigation, split-terminal state, focus navigation inside split groups, a configurable terminal view mode, and bottom-vs-right terminal placement with per-thread placement state.
 
 Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6707d627dbc8a39eb553`.
-
-Important scope boundary: this branch adds terminal placement contracts, settings, state, and toggle commands, but the actual right-side terminal drawer rendering is still documented as future work in `docs/terminal-placement.md`.
 
 ## Major Changes
 
 - Added terminal domain language and planning docs:
   - `CONTEXT.md` defines the canonical terms Terminal drawer, Terminal placement, Terminal dimensions, Logical project, and Terminal view mode.
-  - `docs/terminal-placement.md` records the placement plan, resolved decisions, completed sessions, and remaining layout/polish risks.
+  - `docs/terminal-placement.md` records the placement plan, resolved decisions, completed sessions, and remaining risks.
 - Expanded terminal state from a single active terminal into grouped terminal state:
   - Thread terminal state now tracks `terminalIds`, `terminalGroups`, `activeTerminalId`, `activeTerminalGroupId`, and running terminal ids.
   - `splitTerminal` adds a terminal into the active group, capped by `MAX_TERMINALS_PER_GROUP`.
@@ -28,13 +26,17 @@ Important scope boundary: this branch adds terminal placement contracts, setting
   - Client settings include `terminalViewMode` for sidebar vs tabs organization.
   - Settings UI exposes the terminal view mode without conflating it with terminal placement.
   - `ThreadTerminalDrawer` changes chrome based on view mode while preserving the same terminal sessions.
-- Added terminal placement foundation:
+- Added terminal placement:
   - Contracts define `TerminalPlacement = "bottom" | "right"` and `DEFAULT_TERMINAL_PLACEMENT`.
   - Client settings include `defaultTerminalPlacement`.
   - Thread terminal state stores `terminalPlacement` lazily from the global default.
   - Placement toggles only the active thread's saved placement and does not open a closed drawer.
   - Terminal dimensions moved to logical-project state with independent `terminalHeight` and `terminalWidth`.
   - Legacy per-thread terminal height is used as a fallback when seeding logical-project dimensions.
+  - `ChatView` renders bottom placement below the chat workspace and right placement inside the main horizontal workspace.
+  - Narrow viewports use an effective bottom placement without mutating the saved right placement.
+  - `ThreadTerminalDrawer` supports bottom height resizing and right width resizing.
+  - Placement toggle buttons are available in the single-terminal floating controls, tabs mode, and sidebar mode.
 - Added keybinding commands and defaults:
   - `terminal.togglePlacement` defaults to `mod+shift+j`.
   - `terminal.tabPrevious` defaults to `mod+[`.
@@ -47,9 +49,10 @@ Important scope boundary: this branch adds terminal placement contracts, setting
 - Agent workflows commonly need more than one terminal context. Grouped terminals allow users to keep independent shells while still splitting related terminals in one visible group.
 - Tab/group navigation keeps terminal switching predictable without forcing every terminal into the same split view.
 - Split focus navigation is needed because keyboard users should not have to click between panes inside a split group.
-- Terminal placement needs a clean domain boundary before layout changes. Separating Terminal placement from Terminal view mode avoids overloading "mode" and prevents future merge confusion.
+- Terminal placement needs a clean domain boundary. Separating Terminal placement from Terminal view mode avoids overloading "mode" and prevents future merge confusion.
 - Terminal dimensions are logical-project scoped because equivalent project checkouts across environments should feel consistent, while terminal placement remains thread-specific.
 - Placement toggling is intentionally UI-only state. It must not restart, close, or recreate terminal sessions.
+- Right placement gives terminal-heavy workflows more vertical room while preserving the same terminal sessions and thread-scoped presentation state.
 
 ## Architectural Context For Syncing
 
@@ -57,7 +60,8 @@ Important scope boundary: this branch adds terminal placement contracts, setting
 - `CONTEXT.md` is a glossary only. Keep implementation details in `docs/terminal-placement.md` or code comments, not in the glossary.
 - Thread terminal state owns session presentation identity: open/closed state, placement, terminal ids, groups, active terminal, active group, and running subprocess ids.
 - Logical-project terminal dimension state owns layout sizes: bottom height and right width. Keep those dimensions independent; never derive one from the other when placement changes.
-- Placement state is already persisted even though right placement rendering is not complete on this branch. Future layout work should consume `terminalPlacement` and `terminalWidth` instead of introducing another placement store.
+- Right placement rendering consumes the existing `terminalPlacement` and `terminalWidth` state. Do not introduce another placement store.
+- `ChatView` owns effective placement. It may render bottom on narrow screens even when the saved thread placement is right, but it must not rewrite the saved placement during that fallback.
 - `ThreadTerminalDrawer` layout derivation is centralized in `resolveThreadTerminalDrawerLayout`. Keep tab/group/split derivation there so UI rendering and tests stay aligned.
 - Keybinding commands must stay synchronized across `packages/contracts`, `packages/shared`, `apps/server`, and `apps/web`. This branch touches all of them.
 - The terminal drawer remains persistent per mounted thread. Hidden terminal drawers for non-active threads should not be affected by active-thread placement or keybinding actions.
@@ -87,3 +91,4 @@ Important scope boundary: this branch adds terminal placement contracts, setting
 - Keybinding tests across contracts, server, and web for placement, tab navigation, and split-focus commands.
 - Settings tests for `defaultTerminalPlacement` and `terminalViewMode` defaults/patching.
 - Browser coverage for chat terminal shortcut behavior.
+- Required checks after right-placement rendering: `bun run test src/terminalStateStore.test.ts` from `apps/web`, plus `bun fmt`, `bun lint`, and `bun typecheck`.
