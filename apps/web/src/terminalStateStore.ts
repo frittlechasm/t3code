@@ -236,6 +236,13 @@ const DEFAULT_TERMINAL_DIMENSIONS: LogicalProjectTerminalDimensions = Object.fre
   terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
   terminalWidth: DEFAULT_THREAD_TERMINAL_WIDTH,
 });
+const DEFAULT_THREAD_TERMINAL_STATE_BY_PLACEMENT = new Map<TerminalPlacement, ThreadTerminalState>([
+  [DEFAULT_THREAD_TERMINAL_STATE.terminalPlacement, DEFAULT_THREAD_TERMINAL_STATE],
+]);
+const NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE = new WeakMap<
+  PersistedThreadTerminalState,
+  ThreadTerminalState
+>();
 
 function createDefaultThreadTerminalState(
   terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
@@ -252,10 +259,13 @@ function createDefaultThreadTerminalState(
 function getDefaultThreadTerminalState(
   terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
 ): ThreadTerminalState {
-  if (terminalPlacement === DEFAULT_THREAD_TERMINAL_STATE.terminalPlacement) {
-    return DEFAULT_THREAD_TERMINAL_STATE;
+  const cached = DEFAULT_THREAD_TERMINAL_STATE_BY_PLACEMENT.get(terminalPlacement);
+  if (cached) {
+    return cached;
   }
-  return createDefaultThreadTerminalState(terminalPlacement);
+  const defaultState = createDefaultThreadTerminalState(terminalPlacement);
+  DEFAULT_THREAD_TERMINAL_STATE_BY_PLACEMENT.set(terminalPlacement, defaultState);
+  return defaultState;
 }
 
 function normalizeTerminalPlacement(placement: unknown): TerminalPlacement {
@@ -267,6 +277,10 @@ function defaultTerminalPlacementFromSettings(): TerminalPlacement {
 }
 
 function normalizeThreadTerminalState(state: PersistedThreadTerminalState): ThreadTerminalState {
+  const cached = NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE.get(state);
+  if (cached) {
+    return cached;
+  }
   const terminalIds = normalizeTerminalIds(state.terminalIds);
   const nextTerminalIds = terminalIds.length > 0 ? terminalIds : [DEFAULT_THREAD_TERMINAL_ID];
   const runningTerminalIds = normalizeRunningTerminalIds(state.runningTerminalIds, nextTerminalIds);
@@ -295,10 +309,13 @@ function normalizeThreadTerminalState(state: PersistedThreadTerminalState): Thre
       terminalGroups[0]?.id ??
       fallbackGroupId(DEFAULT_THREAD_TERMINAL_ID),
   };
-  return state.terminalPlacement !== undefined &&
+  const result =
+    state.terminalPlacement !== undefined &&
     threadTerminalStateEqual(state as ThreadTerminalState, normalized)
-    ? (state as ThreadTerminalState)
-    : normalized;
+      ? (state as ThreadTerminalState)
+      : normalized;
+  NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE.set(state, result);
+  return result;
 }
 
 function isDefaultThreadTerminalState(
