@@ -7,6 +7,7 @@ import {
   type TerminalSessionSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
+import { DEFAULT_TERMINAL_FONT_FAMILY } from "@t3tools/contracts/settings";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import {
@@ -46,6 +47,7 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readEnvironmentApi } from "~/environmentApi";
+import { useSettings } from "~/hooks/useSettings";
 import { readLocalApi } from "~/localApi";
 import { attachTerminalSession } from "../terminalSessionState";
 
@@ -82,6 +84,11 @@ function fitTerminalSafely(fitAddon: FitAddon): boolean {
   } catch {
     return false;
   }
+}
+
+function resolveTerminalFontFamily(fontFamily: string): string {
+  const trimmedFontFamily = fontFamily.trim();
+  return trimmedFontFamily.length > 0 ? trimmedFontFamily : DEFAULT_TERMINAL_FONT_FAMILY;
 }
 
 function runtimeEnvSignature(runtimeEnv: Record<string, string> | undefined): string {
@@ -293,6 +300,7 @@ export function TerminalViewport({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const terminalFontFamily = useSettings((settings) => settings.terminalFontFamily);
   const environmentId = threadRef.environmentId;
   const hasHandledExitRef = useRef(false);
   const selectionPointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -329,7 +337,7 @@ export function TerminalViewport({
       lineHeight: 1.2,
       fontSize: 12,
       scrollback: 5_000,
-      fontFamily: '"SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+      fontFamily: resolveTerminalFontFamily(terminalFontFamily),
       theme: terminalThemeFromApp(mount),
     });
     terminal.loadAddon(fitAddon);
@@ -724,10 +732,38 @@ export function TerminalViewport({
       fitAddonRef.current = null;
       terminal.dispose();
     };
-    // autoFocus is intentionally omitted;
-    // it is only read at mount time and must not trigger terminal teardown/recreation.
+    // autoFocus and terminalFontFamily are intentionally omitted. The former is
+    // only read at mount time, and font changes are applied in place below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd, environmentId, runtimeEnvKey, terminalId, threadId, worktreePath]);
+
+  useEffect(() => {
+    const api = readEnvironmentApi(environmentId);
+    const terminal = terminalRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (!api || !terminal || !fitAddon) return;
+    const nextFontFamily = resolveTerminalFontFamily(terminalFontFamily);
+    if (terminal.options.fontFamily === nextFontFamily) return;
+    terminal.options.fontFamily = nextFontFamily;
+    const wasAtBottom = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
+    const frame = window.requestAnimationFrame(() => {
+      fitTerminalSafely(fitAddon);
+      if (wasAtBottom) {
+        terminal.scrollToBottom();
+      }
+      void api.terminal
+        .resize({
+          threadId,
+          terminalId,
+          cols: terminal.cols,
+          rows: terminal.rows,
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [environmentId, terminalFontFamily, terminalId, threadId]);
 
   useEffect(() => {
     if (!autoFocus) return;
