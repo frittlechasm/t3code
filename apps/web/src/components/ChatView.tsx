@@ -88,6 +88,7 @@ import {
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_THREAD_TERMINAL_HEIGHT,
+  DEFAULT_THREAD_TERMINAL_WIDTH,
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
@@ -102,6 +103,7 @@ import { useCommandPaletteStore } from "../commandPaletteStore";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
+import type { TerminalPlacement } from "@t3tools/contracts/settings";
 import { BranchToolbar } from "./BranchToolbar";
 import {
   nativeTerminalShortcutAction,
@@ -443,9 +445,11 @@ interface PersistentThreadTerminalDrawerProps {
   threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
   threadId: ThreadId;
   visible: boolean;
+  placement: TerminalPlacement;
   viewMode?: TerminalViewMode | undefined;
   launchContext: PersistentTerminalLaunchContext | null;
   focusRequestId: number;
+  placementShortcutLabel: string | undefined;
   splitShortcutLabel: string | undefined;
   newShortcutLabel: string | undefined;
   closeShortcutLabel: string | undefined;
@@ -457,9 +461,11 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   threadRef,
   threadId,
   visible,
+  placement,
   viewMode,
   launchContext,
   focusRequestId,
+  placementShortcutLabel,
   splitShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
@@ -475,9 +481,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       : null;
   const project = useStore(useMemo(() => createProjectSelectorByRef(projectRef), [projectRef]));
   const terminalState = useTerminalStateStore(
-    useShallow((state) =>
-      selectThreadTerminalState(state.terminalStateByThreadKey, threadRef),
-    ),
+    useShallow((state) => selectThreadTerminalState(state.terminalStateByThreadKey, threadRef)),
   );
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
   const logicalProjectKey = useMemo(
@@ -502,6 +506,10 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       : false,
   );
   const storeSetTerminalHeight = useTerminalStateStore((state) => state.setTerminalHeight);
+  const storeSetTerminalWidth = useTerminalStateStore((state) => state.setTerminalWidth);
+  const storeToggleTerminalPlacement = useTerminalStateStore(
+    (state) => state.toggleTerminalPlacement,
+  );
   const storeSplitTerminal = useTerminalStateStore((state) => state.splitTerminal);
   const storeNewTerminal = useTerminalStateStore((state) => state.newTerminal);
   const storeSetActiveTerminal = useTerminalStateStore((state) => state.setActiveTerminal);
@@ -552,6 +560,18 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     },
     [logicalProjectKey, storeSetTerminalHeight],
   );
+  const setTerminalWidth = useCallback(
+    (width: number) => {
+      if (!logicalProjectKey) {
+        return;
+      }
+      storeSetTerminalWidth(logicalProjectKey, width);
+    },
+    [logicalProjectKey, storeSetTerminalWidth],
+  );
+  const toggleTerminalPlacement = useCallback(() => {
+    storeToggleTerminalPlacement(threadRef);
+  }, [storeToggleTerminalPlacement, threadRef]);
 
   useEffect(() => {
     if (
@@ -567,6 +587,21 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     logicalProjectKey,
     storeSetTerminalHeight,
     terminalDimensions.terminalHeight,
+  ]);
+  useEffect(() => {
+    if (
+      !logicalProjectKey ||
+      hasPersistedTerminalDimensions ||
+      terminalDimensions.terminalWidth === DEFAULT_THREAD_TERMINAL_WIDTH
+    ) {
+      return;
+    }
+    storeSetTerminalWidth(logicalProjectKey, terminalDimensions.terminalWidth);
+  }, [
+    hasPersistedTerminalDimensions,
+    logicalProjectKey,
+    storeSetTerminalWidth,
+    terminalDimensions.terminalWidth,
   ]);
 
   const splitTerminal = useCallback(() => {
@@ -631,7 +666,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   }
 
   return (
-    <div className={visible ? undefined : "hidden"}>
+    <div className={cn(placement === "right" && "h-full", !visible && "hidden")}>
       <ThreadTerminalDrawer
         threadRef={threadRef}
         threadId={threadId}
@@ -639,7 +674,9 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         worktreePath={effectiveWorktreePath}
         runtimeEnv={runtimeEnv}
         visible={visible}
+        placement={placement}
         height={terminalDimensions.terminalHeight}
+        width={terminalDimensions.terminalWidth}
         viewMode={viewMode}
         terminalIds={terminalState.terminalIds}
         activeTerminalId={terminalState.activeTerminalId}
@@ -655,7 +692,10 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         onActiveTerminalChange={activateTerminal}
         onCloseTerminal={closeTerminal}
         onHeightChange={setTerminalHeight}
+        onWidthChange={setTerminalWidth}
+        onTogglePlacement={toggleTerminalPlacement}
         onAddTerminalContext={handleAddTerminalContext}
+        placementShortcutLabel={visible ? placementShortcutLabel : undefined}
       />
     </div>
   );
@@ -797,6 +837,8 @@ export default function ChatView(props: ChatViewProps) {
       selectThreadTerminalState(state.terminalStateByThreadKey, routeThreadRef),
     ),
   );
+  const effectiveTerminalPlacement: TerminalPlacement =
+    terminalState.terminalPlacement === "right" && !shouldUsePlanSidebarSheet ? "right" : "bottom";
   const openTerminalThreadKeys = useTerminalStateStore(
     useShallow((state) =>
       Object.entries(state.terminalStateByThreadKey).flatMap(([nextThreadKey, nextTerminalState]) =>
@@ -1753,6 +1795,15 @@ export default function ChatView(props: ChatViewProps) {
   );
   const closeTerminalShortcutLabel = useMemo(
     () => shortcutLabelForCommand(keybindings, "terminal.close", terminalShortcutLabelOptions),
+    [keybindings, terminalShortcutLabelOptions],
+  );
+  const terminalPlacementShortcutLabel = useMemo(
+    () =>
+      shortcutLabelForCommand(
+        keybindings,
+        "terminal.togglePlacement",
+        terminalShortcutLabelOptions,
+      ),
     [keybindings, terminalShortcutLabelOptions],
   );
   const diffPanelShortcutLabel = useMemo(
@@ -3885,6 +3936,33 @@ export default function ChatView(props: ChatViewProps) {
         </div>
         {/* end chat column */}
 
+        {effectiveTerminalPlacement === "right"
+          ? mountedTerminalThreadRefs.map(
+              ({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+                <PersistentThreadTerminalDrawer
+                  key={mountedThreadKey}
+                  threadRef={mountedThreadRef}
+                  threadId={mountedThreadRef.threadId}
+                  visible={mountedThreadKey === activeThreadKey && terminalState.terminalOpen}
+                  placement="right"
+                  viewMode={terminalViewMode}
+                  launchContext={
+                    mountedThreadKey === activeThreadKey
+                      ? (activeTerminalLaunchContext ?? null)
+                      : null
+                  }
+                  focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
+                  placementShortcutLabel={terminalPlacementShortcutLabel ?? undefined}
+                  splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                  newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+                  closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+                  keybindings={keybindings}
+                  onAddTerminalContext={addTerminalContextToDraft}
+                />
+              ),
+            )
+          : null}
+
         {/* Plan sidebar */}
         {planSidebarOpen && !shouldUsePlanSidebarSheet ? (
           <PlanSidebar
@@ -3902,24 +3980,32 @@ export default function ChatView(props: ChatViewProps) {
       </div>
       {/* end horizontal flex container */}
 
-      {mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
-        <PersistentThreadTerminalDrawer
-          key={mountedThreadKey}
-          threadRef={mountedThreadRef}
-          threadId={mountedThreadRef.threadId}
-          visible={mountedThreadKey === activeThreadKey && terminalState.terminalOpen}
-          viewMode={terminalViewMode}
-          launchContext={
-            mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
-          }
-          focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
-          splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-          newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-          closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-          keybindings={keybindings}
-          onAddTerminalContext={addTerminalContextToDraft}
-        />
-      ))}
+      {effectiveTerminalPlacement === "bottom"
+        ? mountedTerminalThreadRefs.map(
+            ({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+              <PersistentThreadTerminalDrawer
+                key={mountedThreadKey}
+                threadRef={mountedThreadRef}
+                threadId={mountedThreadRef.threadId}
+                visible={mountedThreadKey === activeThreadKey && terminalState.terminalOpen}
+                placement="bottom"
+                viewMode={terminalViewMode}
+                launchContext={
+                  mountedThreadKey === activeThreadKey
+                    ? (activeTerminalLaunchContext ?? null)
+                    : null
+                }
+                focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
+                placementShortcutLabel={terminalPlacementShortcutLabel ?? undefined}
+                splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+                closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+                keybindings={keybindings}
+                onAddTerminalContext={addTerminalContextToDraft}
+              />
+            ),
+          )
+        : null}
       {shouldUsePlanSidebarSheet ? (
         <RightPanelSheet open={planSidebarOpen} onClose={closePlanSidebar}>
           <PlanSidebar

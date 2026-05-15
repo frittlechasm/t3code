@@ -278,6 +278,33 @@ describe("terminalStateStore actions", () => {
     ).toBe("bottom");
   });
 
+  it("returns stable default terminal state snapshots by placement", () => {
+    expect(selectThreadTerminalState({}, THREAD_REF, "bottom")).toBe(
+      selectThreadTerminalState({}, THREAD_REF, "bottom"),
+    );
+    expect(selectThreadTerminalState({}, THREAD_REF, "right")).toBe(
+      selectThreadTerminalState({}, THREAD_REF, "right"),
+    );
+  });
+
+  it("returns a stable normalized snapshot for legacy persisted terminal state", () => {
+    const terminalStateByThreadKey = {
+      [scopedThreadKey(THREAD_REF)]: {
+        terminalOpen: true,
+        terminalHeight: 320,
+        terminalIds: ["default"],
+        runningTerminalIds: [],
+        activeTerminalId: "default",
+        terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+        activeTerminalGroupId: "group-default",
+      },
+    };
+
+    expect(selectThreadTerminalState(terminalStateByThreadKey, THREAD_REF)).toBe(
+      selectThreadTerminalState(terminalStateByThreadKey, THREAD_REF),
+    );
+  });
+
   it("returns default terminal dimensions for unknown logical projects", () => {
     const dimensions = selectLogicalProjectTerminalDimensions(
       useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
