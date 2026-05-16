@@ -152,6 +152,7 @@ import {
   type TerminalContextSelection,
 } from "../lib/terminalContext";
 import {
+  selectActiveTerminalDrawerState,
   selectLogicalProjectTerminalDimensions,
   selectThreadTerminalState,
   useTerminalStateStore,
@@ -483,13 +484,29 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
   const project = useStore(useMemo(() => createProjectSelectorByRef(projectRef), [projectRef]));
-  const terminalState = useTerminalStateStore(
-    useShallow((state) => selectThreadTerminalState(state.terminalStateByThreadKey, threadRef)),
-  );
   const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
   const logicalProjectKey = useMemo(
     () => (project ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings) : null),
     [project, projectGroupingSettings],
+  );
+  const activeDrawer = useTerminalStateStore(
+    useShallow((state) =>
+      selectActiveTerminalDrawerState(
+        state.terminalStateByThreadKey,
+        state.pinnedTerminalDrawerByProjectEnvironmentKey,
+        logicalProjectKey,
+        threadRef.environmentId,
+        threadRef,
+      ),
+    ),
+  );
+  const terminalState = activeDrawer.state;
+  const sessionThreadRef = useMemo(
+    () =>
+      activeDrawer.pinned
+        ? scopeThreadRef(threadRef.environmentId, activeDrawer.state.pinnedSessionThreadId as ThreadId)
+        : null,
+    [activeDrawer, threadRef.environmentId],
   );
   const terminalDimensions = useTerminalStateStore(
     useShallow((state) =>
@@ -525,17 +542,12 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     }
     return worktreePath;
   }, [launchContext, worktreePath]);
-  const cwd = useMemo(
-    () =>
-      launchContext?.cwd ??
-      (project
-        ? projectScriptCwd({
-            project: { cwd: project.cwd },
-            worktreePath: effectiveWorktreePath,
-          })
-        : null),
-    [effectiveWorktreePath, launchContext?.cwd, project],
-  );
+  const cwd = useMemo(() => {
+    if (launchContext?.cwd) return launchContext.cwd;
+    if (!project) return null;
+    if (activeDrawer.pinned) return project.cwd;
+    return projectScriptCwd({ project: { cwd: project.cwd }, worktreePath: effectiveWorktreePath });
+  }, [activeDrawer.pinned, effectiveWorktreePath, launchContext?.cwd, project]);
   const runtimeEnv = useMemo(
     () =>
       project
@@ -673,6 +685,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       <ThreadTerminalDrawer
         threadRef={threadRef}
         threadId={threadId}
+        {...(sessionThreadRef ? { sessionThreadRef } : {})}
         cwd={cwd}
         worktreePath={effectiveWorktreePath}
         runtimeEnv={runtimeEnv}

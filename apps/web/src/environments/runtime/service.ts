@@ -61,7 +61,7 @@ import {
   selectThreadByRef,
   selectThreadsAcrossEnvironments,
 } from "~/store";
-import { useTerminalStateStore } from "~/terminalStateStore";
+import { isPinnedSessionThreadId, useTerminalStateStore } from "~/terminalStateStore";
 import { useUiStateStore } from "~/uiStateStore";
 import type { WsProtocolCloseContext } from "../../rpc/protocol";
 import { getServerConfig } from "../../rpc/serverState";
@@ -1105,16 +1105,18 @@ function createEnvironmentConnectionHandlers() {
     },
     applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => {
       const threadRef = scopeThreadRef(environmentId, ThreadId.make(event.threadId));
-      const serverThread = selectThreadByRef(useStore.getState(), threadRef);
-      const hasDraftThread =
-        useComposerDraftStore.getState().getDraftThreadByRef(threadRef) !== null;
-      if (
-        !shouldApplyTerminalEvent({
-          serverThreadArchivedAt: serverThread?.archivedAt,
-          hasDraftThread,
-        })
-      ) {
-        return;
+      if (!isPinnedSessionThreadId(event.threadId)) {
+        const serverThread = selectThreadByRef(useStore.getState(), threadRef);
+        const hasDraftThread =
+          useComposerDraftStore.getState().getDraftThreadByRef(threadRef) !== null;
+        if (
+          !shouldApplyTerminalEvent({
+            serverThreadArchivedAt: serverThread?.archivedAt,
+            hasDraftThread,
+          })
+        ) {
+          return;
+        }
       }
       useTerminalStateStore.getState().applyTerminalEvent(threadRef, event);
     },
