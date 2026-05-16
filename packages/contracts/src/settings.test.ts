@@ -2,11 +2,34 @@ import { describe, expect, it } from "vitest";
 import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "./settings.ts";
+import {
+  ClientSettingsSchema,
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SERVER_SETTINGS,
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  ServerSettings,
+  ServerSettingsPatch,
+} from "./settings.ts";
 
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+
+describe("ClientSettings terminal font", () => {
+  it("defaults to the built-in terminal font family", () => {
+    expect(DEFAULT_CLIENT_SETTINGS.terminalFontFamily).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
+    expect(decodeClientSettings({}).terminalFontFamily).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
+  });
+
+  it("trims custom terminal font family values", () => {
+    expect(
+      decodeClientSettings({
+        terminalFontFamily: '  "JetBrainsMono Nerd Font Mono", "SF Mono", monospace  ',
+      }).terminalFontFamily,
+    ).toBe('"JetBrainsMono Nerd Font Mono", "SF Mono", monospace');
+  });
+});
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
