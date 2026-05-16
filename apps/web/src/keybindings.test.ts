@@ -24,6 +24,7 @@ import {
   isTerminalToggleShortcut,
   isNativeTerminalNewTabShortcut,
   nativeTerminalTabTraversalDirection,
+  resolveTerminalShortcutAction,
   resolveShortcutCommand,
   shouldShowModelPickerJumpHints,
   shouldShowThreadJumpHints,
@@ -99,7 +100,7 @@ const DEFAULT_BINDINGS = compile([
   },
   {
     shortcut: modShortcut("d", { shiftKey: true }),
-    command: "terminal.new",
+    command: "terminal.splitHorizontal",
     whenAst: whenIdentifier("terminalFocus"),
   },
   {
@@ -241,11 +242,16 @@ describe("split/new/close terminal shortcuts", () => {
         context: { terminalFocus: true },
       }),
     );
-    assert.isTrue(
-      isTerminalNewShortcut(event({ key: "d", ctrlKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
-        platform: "Linux",
-        context: { terminalFocus: true },
-      }),
+    assert.strictEqual(
+      resolveTerminalShortcutAction(
+        event({ key: "d", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+          context: { terminalFocus: true },
+        },
+      ),
+      "splitHorizontal",
     );
     assert.isTrue(
       isTerminalNewShortcut(event({ key: "t", metaKey: true }), DEFAULT_BINDINGS, {
@@ -466,6 +472,13 @@ describe("shortcutLabelForCommand", () => {
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.togglePlacement", "MacIntel"),
       "⇧⌘J",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.splitHorizontal", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⇧⌘D",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.previous", "Linux"),
@@ -782,6 +795,13 @@ describe("terminalShortcutActionFromCommand", () => {
     assert.strictEqual(
       terminalShortcutActionFromCommand("terminal.togglePlacement"),
       "togglePlacement",
+    );
+  });
+
+  it("maps terminal.splitHorizontal to a horizontal split action", () => {
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.splitHorizontal"),
+      "splitHorizontal",
     );
   });
 });

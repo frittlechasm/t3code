@@ -24,6 +24,14 @@ _Avoid_: Physical project, environment project
 The terminal drawer's internal organization style for multiple terminals.
 _Avoid_: Terminal placement
 
+**Terminal split orientation**:
+The direction in which one split node arranges its child terminal panes.
+_Avoid_: Terminal placement, Terminal view mode
+
+**Terminal split layout**:
+The nested arrangement of split terminal panes inside a terminal group.
+_Avoid_: Terminal placement, Terminal view mode
+
 ## Relationships
 
 - A **Terminal drawer** belongs to exactly one thread.
@@ -31,6 +39,8 @@ _Avoid_: Terminal placement
 - A **Logical project** has saved **Terminal dimensions** for drawer layout.
 - A **Terminal drawer** uses its saved **Terminal placement**, or the global default when none exists.
 - A **Terminal drawer** has exactly one **Terminal view mode**.
+- A split terminal group has zero or one **Terminal split layout**.
+- A **Terminal split layout** has one or more **Terminal split orientation** nodes.
 
 ## Example Dialogue
 
@@ -42,3 +52,6 @@ _Avoid_: Terminal placement
 - "terminal window" was used for the persistent thread terminal UI; resolved: use **Terminal drawer**.
 - "right side mode" could conflict with **Terminal view mode**; resolved: bottom versus right is **Terminal placement**.
 - "project-specific" means **Logical project** for terminal dimensions.
+- "horizontal splitting" means stacked split terminals within a terminal group, not **Terminal placement**.
+- "terminal-specific split" means the split is anchored to the focused terminal's group.
+- "group-level split orientation" prevents tmux-style mixed splits; resolved: use **Terminal split layout**.

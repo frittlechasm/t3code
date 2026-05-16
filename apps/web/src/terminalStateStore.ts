@@ -18,6 +18,8 @@ import {
   DEFAULT_THREAD_TERMINAL_WIDTH,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
+  type TerminalSplitLayout,
+  type TerminalSplitOrientation,
   type ThreadTerminalGroup,
 } from "./types";
 
@@ -136,6 +138,103 @@ function normalizeTerminalGroupIds(terminalIds: string[]): string[] {
   return [...new Set(terminalIds.map((id) => id.trim()).filter((id) => id.length > 0))];
 }
 
+function normalizeTerminalSplitOrientation(
+  orientation: unknown,
+  terminalCount: number,
+): TerminalSplitOrientation | undefined {
+  if (terminalCount <= 1) return undefined;
+  return orientation === "horizontal" || orientation === "vertical" ? orientation : "vertical";
+}
+
+function createTerminalSplitLayoutFromTerminalIds(
+  terminalIds: string[],
+  orientation: TerminalSplitOrientation = "vertical",
+): TerminalSplitLayout | undefined {
+  const [firstTerminalId, ...restTerminalIds] = terminalIds;
+  if (!firstTerminalId) return undefined;
+  if (restTerminalIds.length === 0) {
+    return { type: "terminal", terminalId: firstTerminalId };
+  }
+  return {
+    type: "split",
+    orientation,
+    children: terminalIds.map((terminalId) => ({ type: "terminal", terminalId })),
+  };
+}
+
+function collectTerminalIdsFromSplitLayout(layout: TerminalSplitLayout): string[] {
+  if (layout.type === "terminal") return [layout.terminalId];
+  return layout.children.flatMap(collectTerminalIdsFromSplitLayout);
+}
+
+function normalizeTerminalSplitLayout(
+  layout: TerminalSplitLayout | undefined,
+  terminalIds: string[],
+  fallbackOrientation: TerminalSplitOrientation | undefined,
+): TerminalSplitLayout | undefined {
+  if (terminalIds.length <= 1) return undefined;
+  const validTerminalIds = new Set(terminalIds);
+  const seenTerminalIds = new Set<string>();
+
+  const normalizeNode = (
+    node: TerminalSplitLayout | undefined,
+  ): TerminalSplitLayout | undefined => {
+    if (!node || typeof node !== "object") return undefined;
+    if (node.type === "terminal") {
+      if (!validTerminalIds.has(node.terminalId) || seenTerminalIds.has(node.terminalId)) {
+        return undefined;
+      }
+      seenTerminalIds.add(node.terminalId);
+      return { type: "terminal", terminalId: node.terminalId };
+    }
+    if (node.type !== "split") return undefined;
+    const orientation = node.orientation === "horizontal" ? "horizontal" : "vertical";
+    const children = node.children.flatMap((child) => {
+      const normalized = normalizeNode(child);
+      return normalized ? [normalized] : [];
+    });
+    if (children.length === 0) return undefined;
+    if (children.length === 1) return children[0];
+    return { type: "split", orientation, children };
+  };
+
+  const normalizedLayout = normalizeNode(layout);
+  if (
+    normalizedLayout &&
+    arraysEqual(collectTerminalIdsFromSplitLayout(normalizedLayout), terminalIds)
+  ) {
+    return normalizedLayout;
+  }
+  return createTerminalSplitLayoutFromTerminalIds(terminalIds, fallbackOrientation ?? "vertical");
+}
+
+function terminalSplitLayoutsEqual(
+  left: TerminalSplitLayout | undefined,
+  right: TerminalSplitLayout | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  if (left.type !== right.type) return false;
+  if (left.type === "terminal" && right.type === "terminal") {
+    return left.terminalId === right.terminalId;
+  }
+  if (left.type !== "split" || right.type !== "split") return false;
+  if (left.orientation !== right.orientation) return false;
+  if (left.children.length !== right.children.length) return false;
+  for (let index = 0; index < left.children.length; index += 1) {
+    if (!terminalSplitLayoutsEqual(left.children[index], right.children[index])) return false;
+  }
+  return true;
+}
+
+function copyTerminalSplitLayout(layout: TerminalSplitLayout): TerminalSplitLayout {
+  if (layout.type === "terminal") return { type: "terminal", terminalId: layout.terminalId };
+  return {
+    type: "split",
+    orientation: layout.orientation,
+    children: layout.children.map(copyTerminalSplitLayout),
+  };
+}
+
 function normalizeTerminalGroups(
   terminalGroups: ThreadTerminalGroup[],
   terminalIds: string[],
@@ -159,10 +258,26 @@ function normalizeTerminalGroups(
       group.id.trim().length > 0
         ? group.id.trim()
         : fallbackGroupId(groupTerminalIds[0] ?? DEFAULT_THREAD_TERMINAL_ID);
-    nextGroups.push({
+    const nextGroup: ThreadTerminalGroup = {
       id: assignUniqueGroupId(baseGroupId, usedGroupIds),
       terminalIds: groupTerminalIds,
-    });
+    };
+    const splitOrientation = normalizeTerminalSplitOrientation(
+      group.splitOrientation,
+      groupTerminalIds.length,
+    );
+    if (splitOrientation) {
+      nextGroup.splitOrientation = splitOrientation;
+    }
+    const splitLayout = normalizeTerminalSplitLayout(
+      group.splitLayout,
+      groupTerminalIds,
+      splitOrientation,
+    );
+    if (splitLayout && splitLayout.type === "split") {
+      nextGroup.splitLayout = splitLayout;
+    }
+    nextGroups.push(nextGroup);
   }
 
   for (const terminalId of terminalIds) {
@@ -200,6 +315,8 @@ function terminalGroupsEqual(left: ThreadTerminalGroup[], right: ThreadTerminalG
     const rightGroup = right[index];
     if (!leftGroup || !rightGroup) return false;
     if (leftGroup.id !== rightGroup.id) return false;
+    if (leftGroup.splitOrientation !== rightGroup.splitOrientation) return false;
+    if (!terminalSplitLayoutsEqual(leftGroup.splitLayout, rightGroup.splitLayout)) return false;
     if (!arraysEqual(leftGroup.terminalIds, rightGroup.terminalIds)) return false;
   }
   return true;
@@ -346,10 +463,58 @@ function terminalEventBufferKey(threadRef: ScopedThreadRef, terminalId: string):
 }
 
 function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[] {
-  return groups.map((group) => ({
-    id: group.id,
-    terminalIds: [...group.terminalIds],
-  }));
+  return groups.map((group) => {
+    const nextGroup: ThreadTerminalGroup = {
+      id: group.id,
+      terminalIds: [...group.terminalIds],
+    };
+    if (group.splitOrientation) {
+      nextGroup.splitOrientation = group.splitOrientation;
+    }
+    if (group.splitLayout) {
+      nextGroup.splitLayout = copyTerminalSplitLayout(group.splitLayout);
+    }
+    return nextGroup;
+  });
+}
+
+function insertTerminalIntoSplitLayout(
+  layout: TerminalSplitLayout,
+  anchorTerminalId: string,
+  terminalId: string,
+  orientation: TerminalSplitOrientation,
+): TerminalSplitLayout {
+  if (layout.type === "terminal") {
+    if (layout.terminalId !== anchorTerminalId) return layout;
+    return {
+      type: "split",
+      orientation,
+      children: [layout, { type: "terminal", terminalId }],
+    };
+  }
+  return {
+    ...layout,
+    children: layout.children.map((child) =>
+      insertTerminalIntoSplitLayout(child, anchorTerminalId, terminalId, orientation),
+    ),
+  };
+}
+
+function pruneTerminalFromSplitLayout(
+  layout: TerminalSplitLayout | undefined,
+  terminalId: string,
+): TerminalSplitLayout | undefined {
+  if (!layout) return undefined;
+  if (layout.type === "terminal") {
+    return layout.terminalId === terminalId ? undefined : layout;
+  }
+  const children = layout.children.flatMap((child) => {
+    const pruned = pruneTerminalFromSplitLayout(child, terminalId);
+    return pruned ? [pruned] : [];
+  });
+  if (children.length === 0) return undefined;
+  if (children.length === 1) return children[0];
+  return { ...layout, children };
 }
 
 function appendTerminalEventEntry(
@@ -391,6 +556,7 @@ function upsertTerminalIntoGroups(
   state: ThreadTerminalState,
   terminalId: string,
   mode: "split" | "new",
+  options: { splitOrientation?: TerminalSplitOrientation; anchorTerminalId?: string } = {},
 ): ThreadTerminalState {
   const normalized = normalizeThreadTerminalState(state);
   if (!isValidTerminalId(terminalId)) {
@@ -427,19 +593,20 @@ function upsertTerminalIntoGroups(
     });
   }
 
-  let activeGroupIndex = terminalGroups.findIndex(
-    (group) => group.id === normalized.activeTerminalGroupId,
-  );
+  const anchorTerminalId =
+    options.anchorTerminalId && normalized.terminalIds.includes(options.anchorTerminalId)
+      ? options.anchorTerminalId
+      : normalized.activeTerminalId;
+  let activeGroupIndex = findGroupIndexByTerminalId(terminalGroups, anchorTerminalId);
   if (activeGroupIndex < 0) {
-    activeGroupIndex = findGroupIndexByTerminalId(terminalGroups, normalized.activeTerminalId);
+    activeGroupIndex = terminalGroups.findIndex(
+      (group) => group.id === normalized.activeTerminalGroupId,
+    );
   }
   if (activeGroupIndex < 0) {
     const usedGroupIds = new Set(terminalGroups.map((group) => group.id));
-    const nextGroupId = assignUniqueGroupId(
-      fallbackGroupId(normalized.activeTerminalId),
-      usedGroupIds,
-    );
-    terminalGroups.push({ id: nextGroupId, terminalIds: [normalized.activeTerminalId] });
+    const nextGroupId = assignUniqueGroupId(fallbackGroupId(anchorTerminalId), usedGroupIds);
+    terminalGroups.push({ id: nextGroupId, terminalIds: [anchorTerminalId] });
     activeGroupIndex = terminalGroups.length - 1;
   }
 
@@ -457,11 +624,26 @@ function upsertTerminalIntoGroups(
   }
 
   if (!destinationGroup.terminalIds.includes(terminalId)) {
-    const anchorIndex = destinationGroup.terminalIds.indexOf(normalized.activeTerminalId);
+    const previousTerminalIds = [...destinationGroup.terminalIds];
+    const anchorIndex = destinationGroup.terminalIds.indexOf(anchorTerminalId);
     if (anchorIndex >= 0) {
       destinationGroup.terminalIds.splice(anchorIndex + 1, 0, terminalId);
     } else {
       destinationGroup.terminalIds.push(terminalId);
+    }
+    const splitOrientation = options.splitOrientation ?? "vertical";
+    destinationGroup.splitOrientation = destinationGroup.splitOrientation ?? splitOrientation;
+    const baseLayout =
+      destinationGroup.splitLayout ??
+      createTerminalSplitLayoutFromTerminalIds(
+        previousTerminalIds,
+        destinationGroup.splitOrientation,
+      );
+    const nextSplitLayout = baseLayout
+      ? insertTerminalIntoSplitLayout(baseLayout, anchorTerminalId, terminalId, splitOrientation)
+      : createTerminalSplitLayoutFromTerminalIds(destinationGroup.terminalIds, splitOrientation);
+    if (nextSplitLayout) {
+      destinationGroup.splitLayout = nextSplitLayout;
     }
   }
 
@@ -498,8 +680,16 @@ function toggleThreadTerminalPlacement(state: ThreadTerminalState): ThreadTermin
   };
 }
 
-function splitThreadTerminal(state: ThreadTerminalState, terminalId: string): ThreadTerminalState {
-  return upsertTerminalIntoGroups(state, terminalId, "split");
+function splitThreadTerminal(
+  state: ThreadTerminalState,
+  terminalId: string,
+  orientation: TerminalSplitOrientation,
+  anchorTerminalId?: string,
+): ThreadTerminalState {
+  return upsertTerminalIntoGroups(state, terminalId, "split", {
+    splitOrientation: orientation,
+    ...(anchorTerminalId !== undefined ? { anchorTerminalId } : {}),
+  });
 }
 
 function newThreadTerminal(state: ThreadTerminalState, terminalId: string): ThreadTerminalState {
@@ -550,10 +740,21 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
       : normalized.activeTerminalId;
 
   const terminalGroups = normalized.terminalGroups
-    .map((group) => ({
-      ...group,
-      terminalIds: group.terminalIds.filter((id) => id !== terminalId),
-    }))
+    .map((group) => {
+      const terminalIds = group.terminalIds.filter((id) => id !== terminalId);
+      const nextGroup: ThreadTerminalGroup = {
+        id: group.id,
+        terminalIds,
+      };
+      if (group.splitOrientation && terminalIds.length > 1) {
+        nextGroup.splitOrientation = group.splitOrientation;
+      }
+      const splitLayout = pruneTerminalFromSplitLayout(group.splitLayout, terminalId);
+      if (splitLayout && splitLayout.type === "split") {
+        nextGroup.splitLayout = splitLayout;
+      }
+      return nextGroup;
+    })
     .filter((group) => group.terminalIds.length > 0);
 
   const nextActiveTerminalGroupId =
@@ -729,7 +930,12 @@ interface TerminalStateStoreState {
   toggleTerminalPlacement: (threadRef: ScopedThreadRef) => void;
   setTerminalHeight: (logicalProjectKey: string, height: number) => void;
   setTerminalWidth: (logicalProjectKey: string, width: number) => void;
-  splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
+  splitTerminal: (
+    threadRef: ScopedThreadRef,
+    terminalId: string,
+    orientation?: TerminalSplitOrientation,
+    anchorTerminalId?: string,
+  ) => void;
   newTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   ensureTerminal: (
     threadRef: ScopedThreadRef,
@@ -840,8 +1046,10 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
               ? dimensions
               : { ...dimensions, terminalWidth };
           }),
-        splitTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId)),
+        splitTerminal: (threadRef, terminalId, orientation = "vertical", anchorTerminalId) =>
+          updateTerminal(threadRef, (state) =>
+            splitThreadTerminal(state, terminalId, orientation, anchorTerminalId),
+          ),
         newTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => newThreadTerminal(state, terminalId)),
         ensureTerminal: (threadRef, terminalId, options) =>

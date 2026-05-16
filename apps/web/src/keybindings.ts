@@ -51,6 +51,7 @@ export type TerminalShortcutAction =
   | "toggle"
   | "togglePlacement"
   | "split"
+  | "splitHorizontal"
   | "new"
   | "close"
   | "tabPrevious"
@@ -511,6 +512,8 @@ export function terminalShortcutActionFromCommand(
       return "togglePlacement";
     case "terminal.split":
       return "split";
+    case "terminal.splitHorizontal":
+      return "splitHorizontal";
     case "terminal.new":
       return "new";
     case "terminal.close":

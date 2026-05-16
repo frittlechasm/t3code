@@ -2,26 +2,35 @@
 
 ## Branch Scope
 
-This branch expands terminal UX and state management. It adds terminal tab/group navigation, split-terminal state, focus navigation inside split groups, a configurable terminal view mode, and bottom-vs-right terminal placement with per-thread placement state.
+This branch expands terminal UX and state management. It adds terminal tab/group navigation, split-terminal state with nested mixed-orientation layouts, focus navigation inside split groups, a configurable terminal view mode, and bottom-vs-right terminal placement with per-thread placement state.
 
 Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6707d627dbc8a39eb553`.
 
 ## Major Changes
 
 - Added terminal domain language and planning docs:
-  - `CONTEXT.md` defines the canonical terms Terminal drawer, Terminal placement, Terminal dimensions, Logical project, and Terminal view mode.
+  - `CONTEXT.md` defines the canonical terms Terminal drawer, Terminal placement, Terminal dimensions, Logical project, Terminal view mode, Terminal split orientation, and Terminal split layout.
   - `docs/terminal-placement.md` records the placement plan, resolved decisions, completed sessions, and remaining risks.
+  - `docs/terminal-splits.md` records the horizontal/nested split plan, design decisions, and implementation phases.
 - Expanded terminal state from a single active terminal into grouped terminal state:
   - Thread terminal state now tracks `terminalIds`, `terminalGroups`, `activeTerminalId`, `activeTerminalGroupId`, and running terminal ids.
-  - `splitTerminal` adds a terminal into the active group, capped by `MAX_TERMINALS_PER_GROUP`.
+  - `splitTerminal` adds a terminal into the active group, capped by `MAX_TERMINALS_PER_GROUP`. Accepts an orientation (`"vertical"` or `"horizontal"`) and an optional anchor terminal id.
   - `newTerminal` creates a new group/tab.
   - Closing a terminal preserves a valid active terminal and resets only when the final terminal closes.
   - Terminal event buffers are kept outside persisted UI state and are cleared when terminal state is removed.
+- Added nested split layout model:
+  - `TerminalSplitOrientation` (`"vertical" | "horizontal"`) and `TerminalSplitLayout` (recursive binary tree of terminal leaves and split nodes) defined in `apps/web/src/types.ts`.
+  - `ThreadTerminalGroup` extended with optional `splitOrientation` and `splitLayout`.
+  - Split layout helpers: `normalizeTerminalSplitLayout` validates and rebuilds layouts against the group's terminal ids, `insertTerminalIntoSplitLayout` nests a new terminal under the anchor pane, `pruneTerminalFromSplitLayout` removes a terminal and collapses single-child split nodes.
+  - Equality, copy, and collection helpers updated to include split layout fields.
+  - Existing persisted groups without a split layout are normalized to a flat vertical layout for backward compatibility.
 - Added terminal tab and split navigation UI:
-  - `ThreadTerminalDrawer` derives drawer layout in `resolveThreadTerminalDrawerLayout`.
-  - Tabs represent terminal groups; split groups render multiple terminals side by side.
-  - Toolbar actions support splitting, creating, closing, tab switching, and cycling focus within the active split group.
-  - Browser/test coverage verifies drawer layout and event replay behavior.
+  - `ThreadTerminalDrawer` derives drawer layout in `resolveThreadTerminalDrawerLayout`, now including `visibleSplitLayout` for the active group.
+  - Tabs represent terminal groups; split groups render terminals using `TerminalSplitLayoutView`, a recursive component that renders nested grids (columns for vertical splits, rows for horizontal splits).
+  - Toolbar actions support vertical splitting, horizontal splitting, creating, closing, tab switching, and cycling focus within the active split group.
+  - Horizontal split button added to all three toolbar variants (floating controls, tabs mode, sidebar mode) with disabled state at max capacity and shortcut label tooltips.
+  - Split shortcuts handled inside `TerminalViewport`'s xterm custom key handler pass the focused pane's terminal id as the anchor; global ChatView handlers fall back to the active terminal.
+  - Browser/test coverage verifies drawer layout, split layout resolution, and event replay behavior.
 - Added terminal view mode:
   - Client settings include `terminalViewMode` for sidebar vs tabs organization.
   - Settings UI exposes the terminal view mode without conflating it with terminal placement.
@@ -39,9 +48,11 @@ Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6
   - Placement toggle buttons are available in the single-terminal floating controls, tabs mode, and sidebar mode.
 - Added keybinding commands and defaults:
   - `terminal.togglePlacement` defaults to `mod+shift+j`.
+  - `terminal.splitHorizontal` defaults to `mod+shift+d` with `when: "terminalFocus"`.
   - `terminal.tabPrevious` defaults to `mod+[`.
   - `terminal.tabNext` defaults to `mod+]`.
   - `terminal.splitFocusNext` defaults to `mod+\`.
+  - `TerminalShortcutAction` union extended with `"splitHorizontal"`; `terminalShortcutActionFromCommand` maps the new command.
   - Server, web, contracts, and settings tests were updated for the expanded command set.
 
 ## Reasons For The Changes
@@ -57,12 +68,16 @@ Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6
 ## Architectural Context For Syncing
 
 - Preserve the distinction between **Terminal placement** and **Terminal view mode**. Placement is bottom vs right; view mode is tabs vs sidebar. Do not merge these into one enum.
-- `CONTEXT.md` is a glossary only. Keep implementation details in `docs/terminal-placement.md` or code comments, not in the glossary.
-- Thread terminal state owns session presentation identity: open/closed state, placement, terminal ids, groups, active terminal, active group, and running subprocess ids.
+- Preserve the distinction between **Terminal split orientation** and **Terminal placement**. Split orientation is per split node inside a group; placement is bottom vs right for the whole drawer.
+- `CONTEXT.md` is a glossary only. Keep implementation details in `docs/terminal-placement.md`, `docs/terminal-splits.md`, or code comments, not in the glossary.
+- Thread terminal state owns session presentation identity: open/closed state, placement, terminal ids, groups, active terminal, active group, split layouts, and running subprocess ids.
+- Split orientation is established per split node, not per group or per drawer. A single terminal group can contain mixed vertical and horizontal split nodes (tmux-style nesting).
+- The split anchor model: xterm-pane shortcut handlers pass their own `terminalId` as the anchor; toolbar and global ChatView handlers fall back to the active terminal. New terminals are inserted adjacent to the anchor in both the `terminalIds` array and the split layout tree.
 - Logical-project terminal dimension state owns layout sizes: bottom height and right width. Keep those dimensions independent; never derive one from the other when placement changes.
 - Right placement rendering consumes the existing `terminalPlacement` and `terminalWidth` state. Do not introduce another placement store.
 - `ChatView` owns effective placement. It may render bottom on narrow screens even when the saved thread placement is right, but it must not rewrite the saved placement during that fallback.
-- `ThreadTerminalDrawer` layout derivation is centralized in `resolveThreadTerminalDrawerLayout`. Keep tab/group/split derivation there so UI rendering and tests stay aligned.
+- `ThreadTerminalDrawer` layout derivation is centralized in `resolveThreadTerminalDrawerLayout`. Keep tab/group/split/layout derivation there so UI rendering and tests stay aligned.
+- `TerminalSplitLayoutView` renders split layouts recursively: vertical nodes use column grids, horizontal nodes use row grids. Each terminal leaf delegates to `TerminalViewport`.
 - Keybinding commands must stay synchronized across `packages/contracts`, `packages/shared`, `apps/server`, and `apps/web`. This branch touches all of them.
 - The terminal drawer remains persistent per mounted thread. Hidden terminal drawers for non-active threads should not be affected by active-thread placement or keybinding actions.
 - The `KEYBINDINGS.md` command list includes the new terminal tab and split-focus commands, but its defaults block may lag the shared defaults. Treat `packages/shared/src/keybindings.ts` as the source of truth for defaults.
@@ -73,7 +88,9 @@ Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6
 - `apps/web/src/terminalStateStore.test.ts`
 - `apps/web/src/components/ThreadTerminalDrawer.tsx`
 - `apps/web/src/components/ThreadTerminalDrawer.test.ts`
+- `apps/web/src/components/ThreadTerminalDrawer.browser.tsx`
 - `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/types.ts`
 - `apps/web/src/keybindings.ts`
 - `apps/web/src/components/settings/SettingsPanels.tsx`
 - `packages/contracts/src/settings.ts`
@@ -83,12 +100,14 @@ Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6
 - `KEYBINDINGS.md`
 - `CONTEXT.md`
 - `docs/terminal-placement.md`
+- `docs/terminal-splits.md`
 
 ## Verification Added On Branch
 
 - Terminal store tests for grouped terminals, split caps, new groups, active-terminal fallback, placement defaulting, placement toggling, logical-project dimensions, legacy height fallback, event buffers, and subprocess activity.
-- Thread terminal drawer tests for layout derivation, terminal tabs, split metadata, event replay, and selection action positioning.
-- Keybinding tests across contracts, server, and web for placement, tab navigation, and split-focus commands.
+- Terminal store tests for split orientation: vertical first split, horizontal first split, nested mixed-orientation splits, anchor-specific insertion, and legacy missing-layout normalization.
+- Thread terminal drawer tests for layout derivation, terminal tabs, split metadata, split layout resolution (including horizontal orientation), event replay, and selection action positioning.
+- Keybinding tests across contracts, server, and web for placement, tab navigation, split-focus, and `terminal.splitHorizontal` commands.
 - Settings tests for `defaultTerminalPlacement` and `terminalViewMode` defaults/patching.
-- Browser coverage for chat terminal shortcut behavior.
-- Required checks after right-placement rendering: `bun run test src/terminalStateStore.test.ts` from `apps/web`, plus `bun fmt`, `bun lint`, and `bun typecheck`.
+- Browser coverage for chat terminal shortcut behavior and `onSplitTerminalShortcut` prop wiring.
+- Required checks: `bun run test`, `bun fmt`, `bun lint`, and `bun typecheck`.
