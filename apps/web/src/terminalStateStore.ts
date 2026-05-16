@@ -810,6 +810,22 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
   });
 }
 
+function pinnedTerminalDrawerStateFromThreadState(
+  state: ThreadTerminalState,
+  pinnedSessionThreadId: string,
+): PinnedTerminalDrawerState {
+  return {
+    terminalOpen: state.terminalOpen,
+    terminalPlacement: state.terminalPlacement,
+    terminalIds: [...state.terminalIds],
+    runningTerminalIds: [...state.runningTerminalIds],
+    activeTerminalId: state.activeTerminalId,
+    terminalGroups: copyTerminalGroups(state.terminalGroups),
+    activeTerminalGroupId: state.activeTerminalGroupId,
+    pinnedSessionThreadId,
+  };
+}
+
 function normalizeTerminalDimension(value: unknown, fallback: number): number {
   return Number.isFinite(value) && typeof value === "number" && value > 0 ? value : fallback;
 }
@@ -893,18 +909,28 @@ function pinnedTerminalDrawerStateEqual(
   );
 }
 
-function copyPinnedTerminalDrawerState(
-  state: PinnedTerminalDrawerState,
-): PinnedTerminalDrawerState {
+function updatePinnedTerminalDrawerStateByKey(
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>,
+  logicalProjectKey: string,
+  environmentId: string,
+  updater: (state: PinnedTerminalDrawerState) => ThreadTerminalState,
+): Record<string, PersistedPinnedTerminalDrawerState> {
+  const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+  const current = pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+  if (!current) return pinnedTerminalDrawerByProjectEnvironmentKey;
+
+  const normalized = normalizePinnedTerminalDrawerState(current);
+  const nextThreadState = updater(normalized);
+  const nextPinnedState = pinnedTerminalDrawerStateFromThreadState(
+    nextThreadState,
+    normalized.pinnedSessionThreadId,
+  );
+  if (pinnedTerminalDrawerStateEqual(normalized, nextPinnedState)) {
+    return pinnedTerminalDrawerByProjectEnvironmentKey;
+  }
   return {
-    terminalOpen: state.terminalOpen,
-    terminalPlacement: state.terminalPlacement,
-    terminalIds: [...state.terminalIds],
-    runningTerminalIds: [...state.runningTerminalIds],
-    activeTerminalId: state.activeTerminalId,
-    terminalGroups: copyTerminalGroups(state.terminalGroups),
-    activeTerminalGroupId: state.activeTerminalGroupId,
-    pinnedSessionThreadId: state.pinnedSessionThreadId,
+    ...pinnedTerminalDrawerByProjectEnvironmentKey,
+    [drawerKey]: nextPinnedState,
   };
 }
 
@@ -1087,6 +1113,20 @@ interface TerminalStateStoreState {
     environmentId: string,
     terminalId: string,
   ) => void;
+  splitPinnedTerminal: (
+    logicalProjectKey: string,
+    environmentId: string,
+    terminalId: string,
+    orientation?: TerminalSplitOrientation,
+    anchorTerminalId?: string,
+  ) => void;
+  newPinnedTerminal: (logicalProjectKey: string, environmentId: string, terminalId: string) => void;
+  setActivePinnedTerminal: (
+    logicalProjectKey: string,
+    environmentId: string,
+    terminalId: string,
+  ) => void;
+  togglePinnedTerminalPlacement: (logicalProjectKey: string, environmentId: string) => void;
   removePinnedTerminalDrawersByEnvironment: (environmentId: string) => void;
 }
 
@@ -1481,6 +1521,60 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
                 [drawerKey]: nextPinnedState,
               },
             };
+          }),
+        splitPinnedTerminal: (
+          logicalProjectKey,
+          environmentId,
+          terminalId,
+          orientation = "vertical",
+          anchorTerminalId,
+        ) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              (current) => splitThreadTerminal(current, terminalId, orientation, anchorTerminalId),
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        newPinnedTerminal: (logicalProjectKey, environmentId, terminalId) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              (current) => newThreadTerminal(current, terminalId),
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        setActivePinnedTerminal: (logicalProjectKey, environmentId, terminalId) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              (current) => setThreadActiveTerminal(current, terminalId),
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        togglePinnedTerminalPlacement: (logicalProjectKey, environmentId) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              toggleThreadTerminalPlacement,
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
           }),
         removePinnedTerminalDrawersByEnvironment: (environmentId) =>
           set((state) => {

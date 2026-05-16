@@ -840,6 +840,75 @@ describe("pinned terminal drawer", () => {
     );
   });
 
+  it("splitPinnedTerminal updates only the pinned drawer layout", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.splitPinnedTerminal(
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      "terminal-pinned-2",
+      "horizontal",
+      "default",
+    );
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(pinned?.terminalIds).toEqual(["default", "terminal-pinned-2"]);
+    expect(pinned?.activeTerminalId).toBe("terminal-pinned-2");
+    expect(pinned?.terminalGroups[0]?.splitOrientation).toBe("horizontal");
+    expect(threadState.terminalIds).toEqual(["default"]);
+  });
+
+  it("newPinnedTerminal and setActivePinnedTerminal update pinned tabs without touching thread state", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.newPinnedTerminal(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, "terminal-pinned-tab");
+    store.setActivePinnedTerminal(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, "default");
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(pinned?.terminalIds).toEqual(["default", "terminal-pinned-tab"]);
+    expect(pinned?.activeTerminalId).toBe("default");
+    expect(threadState.terminalIds).toEqual(["default"]);
+  });
+
+  it("togglePinnedTerminalPlacement changes pinned placement without touching thread placement", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.togglePinnedTerminalPlacement(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId);
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(pinned?.terminalPlacement).toBe("right");
+    expect(threadState.terminalPlacement).toBe("bottom");
+  });
+
   it("normalization recovers a pinned state with an invalid active terminal", () => {
     useTerminalStateStore.getState().pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
 
