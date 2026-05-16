@@ -3,6 +3,7 @@ import { ThreadId, type TerminalEvent } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  isPinnedSessionThreadId,
   migratePersistedTerminalStateStoreState,
   pinnedSessionThreadId,
   type PinnedTerminalDrawerState,
@@ -952,5 +953,43 @@ describe("pinned terminal drawer", () => {
       THREAD_REF,
     );
     expect(activeSameProject.pinned).toBe(true);
+  });
+
+  it("isPinnedSessionThreadId returns true for pinned session thread ids", () => {
+    const id = pinnedSessionThreadId(THREAD_REF.environmentId, LOGICAL_PROJECT_KEY);
+    expect(isPinnedSessionThreadId(id)).toBe(true);
+  });
+
+  it("isPinnedSessionThreadId returns false for real thread ids", () => {
+    expect(isPinnedSessionThreadId(String(THREAD_ID))).toBe(false);
+    expect(isPinnedSessionThreadId("")).toBe(false);
+  });
+
+  it("removePinnedTerminalDrawersByEnvironment removes drawers only for the given environment", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+    store.pinTerminalDrawer(OTHER_THREAD_REF, OTHER_LOGICAL_PROJECT_KEY);
+
+    store.removePinnedTerminalDrawersByEnvironment(THREAD_REF.environmentId);
+
+    const pinnedA = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinnedA).toBeNull();
+
+    const pinnedB = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      OTHER_LOGICAL_PROJECT_KEY,
+      OTHER_THREAD_REF.environmentId,
+    );
+    expect(pinnedB).not.toBeNull();
+  });
+
+  it("removePinnedTerminalDrawersByEnvironment is a no-op when no drawers exist for that environment", () => {
+    const before = useTerminalStateStore.getState();
+    before.removePinnedTerminalDrawersByEnvironment("nonexistent-env");
+    expect(useTerminalStateStore.getState()).toBe(before);
   });
 });

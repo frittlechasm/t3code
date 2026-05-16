@@ -1638,6 +1638,7 @@ export async function removeSavedEnvironment(environmentId: EnvironmentId): Prom
   useSavedEnvironmentRegistryStore.getState().remove(environmentId);
   useSavedEnvironmentRuntimeStore.getState().clear(environmentId);
   useStore.getState().removeEnvironmentState(environmentId);
+  useTerminalStateStore.getState().removePinnedTerminalDrawersByEnvironment(environmentId);
   await removeSavedEnvironmentBearerToken(environmentId);
 }
 
