@@ -207,6 +207,12 @@ code {
   -webkit-app-region: no-drag;
 }
 
+[data-slot="sidebar"][data-side="left"][data-state="collapsed"]
+  ~ [data-slot="sidebar-inset"]
+  .titlebar-controls-inset-when-sidebar-collapsed {
+  padding-left: max(90px, calc(env(titlebar-area-x, 0px) + 1em));
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
