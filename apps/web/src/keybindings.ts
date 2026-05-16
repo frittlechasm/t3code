@@ -3,9 +3,11 @@ import {
   type KeybindingShortcut,
   type KeybindingWhenNode,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
-  type ResolvedKeybindingsConfig,
-  THREAD_JUMP_KEYBINDING_COMMANDS,
   type ModelPickerJumpKeybindingCommand,
+  type ResolvedKeybindingsConfig,
+  TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS,
+  type TerminalTabJumpKeybindingCommand,
+  THREAD_JUMP_KEYBINDING_COMMANDS,
   type ThreadJumpKeybindingCommand,
 } from "@t3tools/contracts";
 import { isMacPlatform } from "./lib/utils";
@@ -387,6 +389,28 @@ export function modelPickerJumpIndexFromCommand(command: string): number | null 
     command as ModelPickerJumpKeybindingCommand,
   );
   return index === -1 ? null : index;
+}
+
+export function terminalTabJumpCommandForIndex(
+  index: number,
+): TerminalTabJumpKeybindingCommand | null {
+  return TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS[index] ?? null;
+}
+
+export function terminalTabJumpIndexFromCommand(command: string): number | null {
+  const index = TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS.indexOf(
+    command as TerminalTabJumpKeybindingCommand,
+  );
+  return index === -1 ? null : index;
+}
+
+export function resolveTerminalTabJumpIndex(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): number | null {
+  const command = resolveShortcutCommand(event, keybindings, options);
+  return command ? terminalTabJumpIndexFromCommand(command) : null;
 }
 
 export function shouldShowModelPickerJumpHints(
