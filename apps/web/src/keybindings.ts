@@ -56,7 +56,8 @@ export type TerminalShortcutAction =
   | "close"
   | "tabPrevious"
   | "tabNext"
-  | "splitFocusNext";
+  | "splitFocusNext"
+  | "pinDrawer";
 
 const TERMINAL_WORD_BACKWARD = "\u001bb";
 const TERMINAL_WORD_FORWARD = "\u001bf";
@@ -524,6 +525,8 @@ export function terminalShortcutActionFromCommand(
       return "tabNext";
     case "terminal.splitFocusNext":
       return "splitFocusNext";
+    case "terminal.pinDrawer":
+      return "pinDrawer";
     default:
       return null;
   }

@@ -301,6 +301,7 @@ interface TerminalViewportProps {
   onNewTerminalShortcut: () => void;
   onCycleTerminalTabShortcut: (direction: "previous" | "next") => void;
   onSplitFocusNextShortcut: () => void;
+  onPinDrawerShortcut: () => void;
   focusRequestId: number;
   autoFocus: boolean;
   resizeEpoch: number;
@@ -323,6 +324,7 @@ export function TerminalViewport({
   onNewTerminalShortcut,
   onCycleTerminalTabShortcut,
   onSplitFocusNextShortcut,
+  onPinDrawerShortcut,
   focusRequestId,
   autoFocus,
   resizeEpoch,
@@ -361,6 +363,9 @@ export function TerminalViewport({
   });
   const handleSplitFocusNextShortcut = useEffectEvent(() => {
     onSplitFocusNextShortcut();
+  });
+  const handlePinDrawerShortcut = useEffectEvent(() => {
+    onPinDrawerShortcut();
   });
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
 
@@ -513,6 +518,14 @@ export function TerminalViewport({
           event.preventDefault();
           event.stopPropagation();
           handleSplitFocusNextShortcut();
+        }
+        return false;
+      }
+      if (terminalAction === "pinDrawer") {
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          handlePinDrawerShortcut();
         }
         return false;
       }
@@ -1091,6 +1104,7 @@ interface TerminalSplitLayoutViewProps {
   onNewTerminalAction: () => void;
   onCycleTerminalTabAction: (direction: "previous" | "next") => void;
   onSplitFocusNextAction: () => void;
+  onPinDrawerAction: () => void;
   focusRequestId: number;
   resizeEpoch: number;
   drawerHeight: number;
@@ -1124,6 +1138,7 @@ function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
           onNewTerminalShortcut={props.onNewTerminalAction}
           onCycleTerminalTabShortcut={props.onCycleTerminalTabAction}
           onSplitFocusNextShortcut={props.onSplitFocusNextAction}
+          onPinDrawerShortcut={props.onPinDrawerAction}
           focusRequestId={props.focusRequestId}
           autoFocus={terminalId === props.activeTerminalId}
           resizeEpoch={props.resizeEpoch}
@@ -1684,6 +1699,7 @@ export default function ThreadTerminalDrawer({
                 onNewTerminalAction={onNewTerminalAction}
                 onCycleTerminalTabAction={onCycleTerminalTabAction}
                 onSplitFocusNextAction={onSplitFocusNextAction}
+                onPinDrawerAction={onPinButtonClick}
                 focusRequestId={focusRequestId}
                 resizeEpoch={resizeEpoch}
                 drawerHeight={drawerHeight}
@@ -1707,6 +1723,7 @@ export default function ThreadTerminalDrawer({
                   onNewTerminalShortcut={onNewTerminalAction}
                   onCycleTerminalTabShortcut={onCycleTerminalTabAction}
                   onSplitFocusNextShortcut={onSplitFocusNextAction}
+                  onPinDrawerShortcut={onPinButtonClick}
                   focusRequestId={focusRequestId}
                   autoFocus
                   resizeEpoch={resizeEpoch}

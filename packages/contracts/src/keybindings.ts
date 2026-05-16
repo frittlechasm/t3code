@@ -57,6 +57,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.tabPrevious",
   "terminal.tabNext",
   "terminal.splitFocusNext",
+  "terminal.pinDrawer",
   "diff.toggle",
   "commandPalette.toggle",
   "chat.new",
