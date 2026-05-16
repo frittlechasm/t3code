@@ -32,9 +32,19 @@ _Avoid_: Terminal placement, Terminal view mode
 The nested arrangement of split terminal panes inside a terminal group.
 _Avoid_: Terminal placement, Terminal view mode
 
+**Pinned terminal drawer**:
+A terminal drawer promoted from thread scope to logical-project-plus-environment scope. It replaces per-thread drawers for all threads in the same logical project and environment while active.
+_Avoid_: Shared terminal, global terminal, pinned terminal group
+
+**Pinned session identity**:
+A stable synthetic identifier used as the server-side `threadId` for terminal sessions in a pinned terminal drawer, independent of any real thread.
+_Avoid_: Synthetic thread ID (in user-facing contexts)
+
 ## Relationships
 
-- A **Terminal drawer** belongs to exactly one thread.
+- A **Terminal drawer** belongs to exactly one thread, unless it is a **Pinned terminal drawer**.
+- A **Pinned terminal drawer** belongs to exactly one (**Logical project**, environment) pair.
+- While a **Pinned terminal drawer** is active, threads in its scope have no independent **Terminal drawer**.
 - A **Terminal drawer** has zero or one saved **Terminal placement**.
 - A **Logical project** has saved **Terminal dimensions** for drawer layout.
 - A **Terminal drawer** uses its saved **Terminal placement**, or the global default when none exists.
@@ -55,3 +65,5 @@ _Avoid_: Terminal placement, Terminal view mode
 - "horizontal splitting" means stacked split terminals within a terminal group, not **Terminal placement**.
 - "terminal-specific split" means the split is anchored to the focused terminal's group.
 - "group-level split orientation" prevents tmux-style mixed splits; resolved: use **Terminal split layout**.
+- "pinned terminal group" could imply individual groups are pinned; resolved: the entire **Terminal drawer** is pinned as a **Pinned terminal drawer**.
+- "shared terminal" or "global terminal" could imply app-wide scope; resolved: pinned drawers are scoped to a (**Logical project**, environment) pair.

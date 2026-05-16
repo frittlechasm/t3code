@@ -48,6 +48,17 @@ export interface TerminalEventEntry {
   event: TerminalEvent;
 }
 
+export interface PinnedTerminalDrawerState {
+  terminalOpen: boolean;
+  terminalPlacement: TerminalPlacement;
+  terminalIds: string[];
+  runningTerminalIds: string[];
+  activeTerminalId: string;
+  terminalGroups: ThreadTerminalGroup[];
+  activeTerminalGroupId: string;
+  pinnedSessionThreadId: string;
+}
+
 const TERMINAL_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
 const EMPTY_TERMINAL_EVENT_ENTRIES: ReadonlyArray<TerminalEventEntry> = [];
 const MAX_TERMINAL_EVENT_BUFFER = 200;
@@ -55,6 +66,7 @@ const MAX_TERMINAL_EVENT_BUFFER = 200;
 interface PersistedTerminalStateStoreState {
   terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;
   terminalDimensionsByLogicalProjectKey?: Record<string, PersistedLogicalProjectTerminalDimensions>;
+  pinnedTerminalDrawerByProjectEnvironmentKey?: Record<string, PersistedPinnedTerminalDrawerState>;
 }
 
 type PersistedThreadTerminalState = Omit<ThreadTerminalState, "terminalPlacement"> & {
@@ -63,6 +75,10 @@ type PersistedThreadTerminalState = Omit<ThreadTerminalState, "terminalPlacement
 };
 
 type PersistedLogicalProjectTerminalDimensions = Partial<LogicalProjectTerminalDimensions>;
+
+type PersistedPinnedTerminalDrawerState = PersistedThreadTerminalState & {
+  pinnedSessionThreadId: string;
+};
 
 export function migratePersistedTerminalStateStoreState(
   persistedState: unknown,
@@ -87,9 +103,14 @@ export function migratePersistedTerminalStateStoreState(
     return {
       terminalStateByThreadKey: nextTerminalStateByThreadKey,
       terminalDimensionsByLogicalProjectKey: nextTerminalDimensionsByLogicalProjectKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey: {},
     };
   }
-  return { terminalStateByThreadKey: {}, terminalDimensionsByLogicalProjectKey: {} };
+  return {
+    terminalStateByThreadKey: {},
+    terminalDimensionsByLogicalProjectKey: {},
+    pinnedTerminalDrawerByProjectEnvironmentKey: {},
+  };
 }
 
 function createTerminalStateStorage() {
@@ -462,6 +483,14 @@ function terminalEventBufferKey(threadRef: ScopedThreadRef, terminalId: string):
   return `${terminalThreadKey(threadRef)}\u0000${terminalId}`;
 }
 
+export function pinnedSessionThreadId(environmentId: string, logicalProjectKey: string): string {
+  return `pinned ${environmentId} ${logicalProjectKey}`;
+}
+
+function pinnedTerminalDrawerKey(logicalProjectKey: string, environmentId: string): string {
+  return `${logicalProjectKey} ${environmentId}`;
+}
+
 function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[] {
   return groups.map((group) => {
     const nextGroup: ThreadTerminalGroup = {
@@ -832,6 +861,56 @@ function setThreadTerminalActivity(
   return { ...normalized, runningTerminalIds: [...runningTerminalIds] };
 }
 
+function normalizePinnedTerminalDrawerState(
+  state: PersistedPinnedTerminalDrawerState,
+): PinnedTerminalDrawerState {
+  const threadState = normalizeThreadTerminalState(state);
+  return { ...threadState, pinnedSessionThreadId: state.pinnedSessionThreadId };
+}
+
+function pinnedTerminalDrawerStateEqual(
+  left: PinnedTerminalDrawerState,
+  right: PinnedTerminalDrawerState,
+): boolean {
+  return (
+    left.pinnedSessionThreadId === right.pinnedSessionThreadId &&
+    threadTerminalStateEqual(left, right)
+  );
+}
+
+function copyPinnedTerminalDrawerState(
+  state: PinnedTerminalDrawerState,
+): PinnedTerminalDrawerState {
+  return {
+    terminalOpen: state.terminalOpen,
+    terminalPlacement: state.terminalPlacement,
+    terminalIds: [...state.terminalIds],
+    runningTerminalIds: [...state.runningTerminalIds],
+    activeTerminalId: state.activeTerminalId,
+    terminalGroups: copyTerminalGroups(state.terminalGroups),
+    activeTerminalGroupId: state.activeTerminalGroupId,
+    pinnedSessionThreadId: state.pinnedSessionThreadId,
+  };
+}
+
+export function selectPinnedTerminalDrawerState(
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>,
+  logicalProjectKey: string | null | undefined,
+  environmentId: string | null | undefined,
+): PinnedTerminalDrawerState | null {
+  if (
+    typeof logicalProjectKey !== "string" ||
+    logicalProjectKey.trim().length === 0 ||
+    typeof environmentId !== "string" ||
+    environmentId.trim().length === 0
+  ) {
+    return null;
+  }
+  const key = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+  const persisted = pinnedTerminalDrawerByProjectEnvironmentKey[key];
+  return persisted ? normalizePinnedTerminalDrawerState(persisted) : null;
+}
+
 export function selectThreadTerminalState(
   terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
   threadRef: ScopedThreadRef | null | undefined,
@@ -922,6 +1001,7 @@ export function selectTerminalEventEntries(
 interface TerminalStateStoreState {
   terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>;
   terminalDimensionsByLogicalProjectKey: Record<string, PersistedLogicalProjectTerminalDimensions>;
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>;
   terminalLaunchContextByThreadKey: Record<string, ThreadTerminalLaunchContext>;
   terminalEventEntriesByKey: Record<string, ReadonlyArray<TerminalEventEntry>>;
   nextTerminalEventId: number;
@@ -959,6 +1039,17 @@ interface TerminalStateStoreState {
   clearTerminalState: (threadRef: ScopedThreadRef) => void;
   removeTerminalState: (threadRef: ScopedThreadRef) => void;
   removeOrphanedTerminalStates: (activeThreadKeys: Set<string>) => void;
+  pinTerminalDrawer: (threadRef: ScopedThreadRef, logicalProjectKey: string) => void;
+  unpinTerminalDrawer: (
+    logicalProjectKey: string,
+    environmentId: string,
+    threadRef: ScopedThreadRef,
+  ) => void;
+  closePinnedTerminal: (
+    logicalProjectKey: string,
+    environmentId: string,
+    terminalId: string,
+  ) => void;
 }
 
 export const useTerminalStateStore = create<TerminalStateStoreState>()(
@@ -1023,6 +1114,7 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
       return {
         terminalStateByThreadKey: {},
         terminalDimensionsByLogicalProjectKey: {},
+        pinnedTerminalDrawerByProjectEnvironmentKey: {},
         terminalLaunchContextByThreadKey: {},
         terminalEventEntriesByKey: {},
         nextTerminalEventId: 1,
@@ -1253,16 +1345,121 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
               terminalEventEntriesByKey: nextTerminalEventEntriesByKey,
             };
           }),
+        pinTerminalDrawer: (threadRef, logicalProjectKey) =>
+          set((state) => {
+            if (logicalProjectKey.trim().length === 0 || threadRef.environmentId.length === 0) {
+              return state;
+            }
+            const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, threadRef.environmentId);
+            const currentThreadState = selectThreadTerminalState(
+              state.terminalStateByThreadKey,
+              threadRef,
+            );
+            const sessionThreadId = pinnedSessionThreadId(
+              threadRef.environmentId,
+              logicalProjectKey,
+            );
+            const pinnedState: PinnedTerminalDrawerState = {
+              terminalOpen: currentThreadState.terminalOpen,
+              terminalPlacement: currentThreadState.terminalPlacement,
+              terminalIds: [...currentThreadState.terminalIds],
+              runningTerminalIds: [...currentThreadState.runningTerminalIds],
+              activeTerminalId: currentThreadState.activeTerminalId,
+              terminalGroups: copyTerminalGroups(currentThreadState.terminalGroups),
+              activeTerminalGroupId: currentThreadState.activeTerminalGroupId,
+              pinnedSessionThreadId: sessionThreadId,
+            };
+            const existing = state.pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+            if (
+              existing &&
+              pinnedTerminalDrawerStateEqual(
+                normalizePinnedTerminalDrawerState(existing),
+                pinnedState,
+              )
+            ) {
+              return state;
+            }
+            return {
+              pinnedTerminalDrawerByProjectEnvironmentKey: {
+                ...state.pinnedTerminalDrawerByProjectEnvironmentKey,
+                [drawerKey]: pinnedState,
+              },
+            };
+          }),
+        unpinTerminalDrawer: (logicalProjectKey, environmentId, threadRef) =>
+          set((state) => {
+            const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+            const pinnedState = state.pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+            if (!pinnedState) return state;
+
+            const normalized = normalizePinnedTerminalDrawerState(pinnedState);
+            const freshThreadState: ThreadTerminalState = {
+              terminalOpen: normalized.terminalOpen,
+              terminalPlacement: normalized.terminalPlacement,
+              terminalIds: [...normalized.terminalIds],
+              runningTerminalIds: [],
+              activeTerminalId: normalized.activeTerminalId,
+              terminalGroups: copyTerminalGroups(normalized.terminalGroups),
+              activeTerminalGroupId: normalized.activeTerminalGroupId,
+            };
+
+            const nextTerminalStateByThreadKey = updateTerminalStateByThreadKey(
+              state.terminalStateByThreadKey,
+              threadRef,
+              () => freshThreadState,
+            );
+
+            const {
+              [drawerKey]: _removed,
+              ...nextPinnedDrawerByKey
+            } = state.pinnedTerminalDrawerByProjectEnvironmentKey;
+
+            return {
+              terminalStateByThreadKey: nextTerminalStateByThreadKey,
+              pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey,
+            };
+          }),
+        closePinnedTerminal: (logicalProjectKey, environmentId, terminalId) =>
+          set((state) => {
+            const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+            const pinnedState = state.pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+            if (!pinnedState) return state;
+
+            const normalized = normalizePinnedTerminalDrawerState(pinnedState);
+            if (!normalized.terminalIds.includes(terminalId)) return state;
+
+            if (normalized.terminalIds.length <= 1) {
+              const {
+                [drawerKey]: _removed,
+                ...nextPinnedDrawerByKey
+              } = state.pinnedTerminalDrawerByProjectEnvironmentKey;
+              return { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+            }
+
+            const nextThreadState = closeThreadTerminal(normalized, terminalId);
+            const nextPinnedState: PinnedTerminalDrawerState = {
+              ...nextThreadState,
+              pinnedSessionThreadId: normalized.pinnedSessionThreadId,
+            };
+            return {
+              pinnedTerminalDrawerByProjectEnvironmentKey: {
+                ...state.pinnedTerminalDrawerByProjectEnvironmentKey,
+                [drawerKey]: nextPinnedState,
+              },
+            };
+          }),
       };
     },
     {
       name: TERMINAL_STATE_STORAGE_KEY,
-      version: 3,
+      version: 4,
       storage: createJSONStorage(createTerminalStateStorage),
       migrate: migratePersistedTerminalStateStoreState,
       partialize: (state) => ({
         terminalStateByThreadKey: state.terminalStateByThreadKey,
         terminalDimensionsByLogicalProjectKey: state.terminalDimensionsByLogicalProjectKey,
+        pinnedTerminalDrawerByProjectEnvironmentKey:
+          state.pinnedTerminalDrawerByProjectEnvironmentKey,
       }),
     },
   ),
