@@ -143,6 +143,11 @@ const DEFAULT_BINDINGS = compile([
     command: "terminal.tabNext",
     whenAst: whenIdentifier("terminalFocus"),
   },
+  {
+    shortcut: modShortcut("p", { shiftKey: true }),
+    command: "terminal.pinDrawer",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
   { shortcut: modShortcut("1"), command: "thread.jump.1" },
   { shortcut: modShortcut("2"), command: "thread.jump.2" },
   { shortcut: modShortcut("3"), command: "thread.jump.3" },
@@ -481,6 +486,20 @@ describe("shortcutLabelForCommand", () => {
       "⇧⌘D",
     );
     assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.pinDrawer", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⇧⌘P",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.pinDrawer", {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "Ctrl+Shift+P",
+    );
+    assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.previous", "Linux"),
       "Ctrl+Shift+[",
     );
@@ -802,6 +821,41 @@ describe("terminalShortcutActionFromCommand", () => {
     assert.strictEqual(
       terminalShortcutActionFromCommand("terminal.splitHorizontal"),
       "splitHorizontal",
+    );
+  });
+
+  it("maps terminal.pinDrawer to the pinDrawer action", () => {
+    assert.strictEqual(terminalShortcutActionFromCommand("terminal.pinDrawer"), "pinDrawer");
+  });
+});
+
+describe("pin drawer shortcut", () => {
+  it("resolves Mod+Shift+P to pinDrawer when terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveTerminalShortcutAction(
+        event({ key: "p", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+      "pinDrawer",
+    );
+    assert.strictEqual(
+      resolveTerminalShortcutAction(
+        event({ key: "p", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "Linux", context: { terminalFocus: true } },
+      ),
+      "pinDrawer",
+    );
+  });
+
+  it("does not resolve pin drawer when terminalFocus is false", () => {
+    assert.isNull(
+      resolveTerminalShortcutAction(
+        event({ key: "p", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
     );
   });
 });

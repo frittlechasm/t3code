@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   migratePersistedTerminalStateStoreState,
   pinnedSessionThreadId,
+  type PinnedTerminalDrawerState,
+  selectActiveTerminalDrawerState,
   selectLogicalProjectTerminalDimensions,
   selectPinnedTerminalDrawerState,
   selectTerminalEventEntries,
@@ -881,5 +883,74 @@ describe("pinned terminal drawer", () => {
   it("selectPinnedTerminalDrawerState returns null for unknown project/environment", () => {
     const result = selectPinnedTerminalDrawerState({}, "unknown-project", THREAD_REF.environmentId);
     expect(result).toBeNull();
+  });
+
+  it("selectActiveTerminalDrawerState returns pinned state when a pinned drawer exists for the project/environment", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    const { terminalStateByThreadKey, pinnedTerminalDrawerByProjectEnvironmentKey } =
+      useTerminalStateStore.getState();
+    const active = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(active.pinned).toBe(true);
+    expect(active.state.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(active.state.terminalOpen).toBe(true);
+    expect((active.state as PinnedTerminalDrawerState).pinnedSessionThreadId).toBe(
+      pinnedSessionThreadId(THREAD_REF.environmentId, LOGICAL_PROJECT_KEY),
+    );
+  });
+
+  it("selectActiveTerminalDrawerState falls back to thread state when no pinned drawer is active", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "terminal-local");
+
+    const { terminalStateByThreadKey, pinnedTerminalDrawerByProjectEnvironmentKey } =
+      useTerminalStateStore.getState();
+    const active = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(active.pinned).toBe(false);
+    expect(active.state.terminalIds).toContain("terminal-local");
+  });
+
+  it("selectActiveTerminalDrawerState scopes pinned state to the correct project/environment pair", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    const { terminalStateByThreadKey, pinnedTerminalDrawerByProjectEnvironmentKey } =
+      useTerminalStateStore.getState();
+
+    // Different project key — no pinned drawer, falls back to thread state
+    const activeOtherProject = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      OTHER_LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(activeOtherProject.pinned).toBe(false);
+
+    // Matching project key — returns pinned state
+    const activeSameProject = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(activeSameProject.pinned).toBe(true);
   });
 });
