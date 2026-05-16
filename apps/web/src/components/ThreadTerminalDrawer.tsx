@@ -274,6 +274,7 @@ export function shouldHandleTerminalSelectionMouseUp(
 interface TerminalViewportProps {
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
+  sessionThreadRef?: ScopedThreadRef;
   terminalId: string;
   terminalLabel: string;
   cwd: string;
@@ -298,6 +299,7 @@ interface TerminalViewportProps {
 export function TerminalViewport({
   threadRef,
   threadId,
+  sessionThreadRef,
   terminalId,
   terminalLabel,
   cwd,
@@ -319,6 +321,8 @@ export function TerminalViewport({
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const environmentId = threadRef.environmentId;
+  const effectiveSessionThreadRef = sessionThreadRef ?? threadRef;
+  const effectiveThreadId = (sessionThreadRef?.threadId ?? threadId) as ThreadId;
   const hasHandledExitRef = useRef(false);
   const selectionPointerRef = useRef<{ x: number; y: number } | null>(null);
   const selectionGestureActiveRef = useRef(false);
@@ -456,7 +460,7 @@ export function TerminalViewport({
       const activeTerminal = terminalRef.current;
       if (!activeTerminal) return;
       try {
-        await api.terminal.write({ threadId, terminalId, data });
+        await api.terminal.write({ threadId: effectiveThreadId, terminalId, data });
       } catch (error) {
         writeSystemMessage(activeTerminal, error instanceof Error ? error.message : fallbackError);
       }
@@ -592,7 +596,7 @@ export function TerminalViewport({
 
     const inputDisposable = terminal.onData((data) => {
       void api.terminal
-        .write({ threadId, terminalId, data })
+        .write({ threadId: effectiveThreadId, terminalId, data })
         .catch((err) =>
           writeSystemMessage(
             terminal,
@@ -725,12 +729,12 @@ export function TerminalViewport({
       const previousLastEntryId =
         selectTerminalEventEntries(
           previousState.terminalEventEntriesByKey,
-          threadRef,
+          effectiveSessionThreadRef,
           terminalId,
         ).at(-1)?.id ?? 0;
       const nextEntries = selectTerminalEventEntries(
         state.terminalEventEntriesByKey,
-        threadRef,
+        effectiveSessionThreadRef,
         terminalId,
       );
       const nextLastEntryId = nextEntries.at(-1)?.id ?? 0;
@@ -748,7 +752,7 @@ export function TerminalViewport({
         if (!activeTerminal || !activeFitAddon) return;
         activeFitAddon.fit();
         const snapshot = await api.terminal.open({
-          threadId,
+          threadId: effectiveThreadId,
           terminalId,
           cwd,
           ...(worktreePath !== undefined ? { worktreePath } : {}),
@@ -760,7 +764,7 @@ export function TerminalViewport({
         writeTerminalSnapshot(activeTerminal, snapshot);
         const bufferedEntries = selectTerminalEventEntries(
           useTerminalStateStore.getState().terminalEventEntriesByKey,
-          threadRef,
+          effectiveSessionThreadRef,
           terminalId,
         );
         const replayEntries = selectTerminalEventEntriesAfterSnapshot(
@@ -798,7 +802,7 @@ export function TerminalViewport({
       }
       void api.terminal
         .resize({
-          threadId,
+          threadId: effectiveThreadId,
           terminalId,
           cols: activeTerminal.cols,
           rows: activeTerminal.rows,
@@ -829,7 +833,7 @@ export function TerminalViewport({
     // autoFocus is intentionally omitted;
     // it is only read at mount time and must not trigger terminal teardown/recreation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd, environmentId, runtimeEnv, terminalId, threadId]);
+  }, [cwd, environmentId, runtimeEnv, terminalId, effectiveThreadId]);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -856,7 +860,7 @@ export function TerminalViewport({
       }
       void api.terminal
         .resize({
-          threadId,
+          threadId: effectiveThreadId,
           terminalId,
           cols: terminal.cols,
           rows: terminal.rows,
@@ -866,7 +870,7 @@ export function TerminalViewport({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [drawerHeight, environmentId, resizeEpoch, terminalId, threadId]);
+  }, [drawerHeight, environmentId, resizeEpoch, terminalId, effectiveThreadId]);
   return (
     <div
       ref={containerRef}
@@ -878,6 +882,7 @@ export function TerminalViewport({
 interface ThreadTerminalDrawerProps {
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
+  sessionThreadRef?: ScopedThreadRef;
   cwd: string;
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
@@ -1058,6 +1063,7 @@ interface TerminalSplitLayoutViewProps {
   layout: TerminalSplitLayout;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
+  sessionThreadRef?: ScopedThreadRef;
   terminalLabelById: Map<string, string>;
   activeTerminalId: string;
   cwd: string;
@@ -1091,6 +1097,7 @@ function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
         <TerminalViewport
           threadRef={props.threadRef}
           threadId={props.threadId}
+          {...(props.sessionThreadRef ? { sessionThreadRef: props.sessionThreadRef } : {})}
           terminalId={terminalId}
           terminalLabel={props.terminalLabelById.get(terminalId) ?? "Terminal"}
           cwd={props.cwd}
@@ -1139,6 +1146,7 @@ function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
 export default function ThreadTerminalDrawer({
   threadRef,
   threadId,
+  sessionThreadRef,
   cwd,
   worktreePath,
   runtimeEnv,
@@ -1613,6 +1621,7 @@ export default function ThreadTerminalDrawer({
                 layout={visibleSplitLayout}
                 threadRef={threadRef}
                 threadId={threadId}
+                {...(sessionThreadRef ? { sessionThreadRef } : {})}
                 terminalLabelById={terminalLabelById}
                 activeTerminalId={resolvedActiveTerminalId}
                 cwd={cwd}
@@ -1636,6 +1645,7 @@ export default function ThreadTerminalDrawer({
                   key={resolvedActiveTerminalId}
                   threadRef={threadRef}
                   threadId={threadId}
+                  {...(sessionThreadRef ? { sessionThreadRef } : {})}
                   terminalId={resolvedActiveTerminalId}
                   terminalLabel={terminalLabelById.get(resolvedActiveTerminalId) ?? "Terminal"}
                   cwd={cwd}

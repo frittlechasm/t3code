@@ -381,6 +381,10 @@ const NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE = new WeakMap<
   PersistedThreadTerminalState,
   ThreadTerminalState
 >();
+const NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE = new WeakMap<
+  PersistedPinnedTerminalDrawerState,
+  PinnedTerminalDrawerState
+>();
 
 function createDefaultThreadTerminalState(
   terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
@@ -485,6 +489,10 @@ function terminalEventBufferKey(threadRef: ScopedThreadRef, terminalId: string):
 
 export function pinnedSessionThreadId(environmentId: string, logicalProjectKey: string): string {
   return `pinned ${environmentId} ${logicalProjectKey}`;
+}
+
+export function isPinnedSessionThreadId(id: string): boolean {
+  return id.startsWith("pinned\0");
 }
 
 function pinnedTerminalDrawerKey(logicalProjectKey: string, environmentId: string): string {
@@ -864,8 +872,12 @@ function setThreadTerminalActivity(
 function normalizePinnedTerminalDrawerState(
   state: PersistedPinnedTerminalDrawerState,
 ): PinnedTerminalDrawerState {
+  const cached = NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE.get(state);
+  if (cached) return cached;
   const threadState = normalizeThreadTerminalState(state);
-  return { ...threadState, pinnedSessionThreadId: state.pinnedSessionThreadId };
+  const result: PinnedTerminalDrawerState = { ...threadState, pinnedSessionThreadId: state.pinnedSessionThreadId };
+  NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE.set(state, result);
+  return result;
 }
 
 function pinnedTerminalDrawerStateEqual(
@@ -947,6 +959,28 @@ export function selectLogicalProjectTerminalDimensions(
     terminalDimensionsByLogicalProjectKey[normalizedLogicalProjectKey],
     fallbackHeight,
   );
+}
+
+export type ActiveTerminalDrawerState =
+  | { pinned: true; state: PinnedTerminalDrawerState }
+  | { pinned: false; state: ThreadTerminalState };
+
+export function selectActiveTerminalDrawerState(
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>,
+  logicalProjectKey: string | null | undefined,
+  environmentId: string | null | undefined,
+  threadRef: ScopedThreadRef | null | undefined,
+): ActiveTerminalDrawerState {
+  const pinned = selectPinnedTerminalDrawerState(
+    pinnedTerminalDrawerByProjectEnvironmentKey,
+    logicalProjectKey,
+    environmentId,
+  );
+  if (pinned !== null) {
+    return { pinned: true, state: pinned };
+  }
+  return { pinned: false, state: selectThreadTerminalState(terminalStateByThreadKey, threadRef) };
 }
 
 function updateTerminalStateByThreadKey(
