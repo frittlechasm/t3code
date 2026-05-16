@@ -1087,6 +1087,7 @@ interface TerminalStateStoreState {
     environmentId: string,
     terminalId: string,
   ) => void;
+  removePinnedTerminalDrawersByEnvironment: (environmentId: string) => void;
 }
 
 export const useTerminalStateStore = create<TerminalStateStoreState>()(
@@ -1480,6 +1481,21 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
                 [drawerKey]: nextPinnedState,
               },
             };
+          }),
+        removePinnedTerminalDrawersByEnvironment: (environmentId) =>
+          set((state) => {
+            const next = Object.fromEntries(
+              Object.entries(state.pinnedTerminalDrawerByProjectEnvironmentKey).filter(
+                ([key]) => !key.endsWith(`\0${environmentId}`),
+              ),
+            );
+            if (
+              Object.keys(next).length ===
+              Object.keys(state.pinnedTerminalDrawerByProjectEnvironmentKey).length
+            ) {
+              return state;
+            }
+            return { pinnedTerminalDrawerByProjectEnvironmentKey: next };
           }),
       };
     },
