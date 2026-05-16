@@ -212,6 +212,66 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
     );
   });
 
+  describe("file diffs", () => {
+    it.effect("returns bounded working-tree patches for modified tracked files", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const originalLines = Array.from(
+          { length: 120 },
+          (_, index) => `line-${String(index + 1).padStart(3, "0")}`,
+        );
+        yield* writeTextFile(cwd, "README.md", `${originalLines.join("\n")}\n`);
+        yield* git(cwd, ["add", "README.md"]);
+        yield* git(cwd, ["commit", "-m", "expand readme"]);
+        const changedLines = [...originalLines];
+        changedLines[59] = "line-060 changed";
+        yield* writeTextFile(cwd, "README.md", `${changedLines.join("\n")}\n`);
+
+        const diff = yield* driver.getFileDiff({ cwd, path: "README.md" });
+
+        assert.equal(diff.state, "patch");
+        if (diff.state === "patch") {
+          assert.include(diff.patch, "diff --git a/README.md b/README.md");
+          assert.include(diff.patch, " line-001");
+          assert.include(diff.patch, "-line-060");
+          assert.include(diff.patch, "+line-060 changed");
+          assert.include(diff.patch, " line-120");
+        }
+      }),
+    );
+
+    it.effect("returns a patch for untracked files", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* writeTextFile(cwd, "src/new-file.ts", "export const value = 1;\n");
+
+        const diff = yield* driver.getFileDiff({ cwd, path: "src/new-file.ts" });
+
+        assert.equal(diff.state, "patch");
+        if (diff.state === "patch") {
+          assert.include(diff.patch, "diff --git a/src/new-file.ts b/src/new-file.ts");
+          assert.include(diff.patch, "+export const value = 1;");
+        }
+      }),
+    );
+
+    it.effect("rejects paths outside the repository", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const exit = yield* Effect.exit(driver.getFileDiff({ cwd, path: "../outside.txt" }));
+
+        assert.equal(exit._tag, "Failure");
+      }),
+    );
+  });
+
   describe("refName operations", () => {
     it.effect("creates, checks out, renames, and lists refs", () =>
       Effect.gen(function* () {

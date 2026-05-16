@@ -5,6 +5,9 @@ import { VcsDriverKind } from "./vcs.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
+const VCS_FILE_DIFF_PATH_MAX_LENGTH = 512;
+const VCS_FILE_DIFF_MAX_BYTES = 1_048_576;
+const VCS_FILE_DIFF_CONTEXT_LINES_MAX = 1_000_000;
 
 // Domain Types
 
@@ -103,6 +106,19 @@ export const VcsStatusInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
 });
 export type VcsStatusInput = typeof VcsStatusInput.Type;
+
+export const VcsFileDiffInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  path: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(VCS_FILE_DIFF_PATH_MAX_LENGTH)),
+  includeStaged: Schema.optional(Schema.Boolean),
+  includeUnstaged: Schema.optional(Schema.Boolean),
+  ignoreWhitespace: Schema.optional(Schema.Boolean),
+  maxBytes: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(VCS_FILE_DIFF_MAX_BYTES))),
+  contextLines: Schema.optional(
+    NonNegativeInt.check(Schema.isLessThanOrEqualTo(VCS_FILE_DIFF_CONTEXT_LINES_MAX)),
+  ),
+});
+export type VcsFileDiffInput = typeof VcsFileDiffInput.Type;
 
 export const VcsPullInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -234,6 +250,26 @@ export const VcsStatusResult = Schema.Struct({
   ...VcsStatusRemoteShape,
 });
 export type VcsStatusResult = typeof VcsStatusResult.Type;
+
+export const VcsFileDiffResult = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("patch"),
+    path: TrimmedNonEmptyStringSchema,
+    patch: Schema.String,
+    sizeBytes: NonNegativeInt,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("empty"),
+    path: TrimmedNonEmptyStringSchema,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("too_large"),
+    path: TrimmedNonEmptyStringSchema,
+    sizeBytes: NonNegativeInt,
+    maxBytes: PositiveInt,
+  }),
+]);
+export type VcsFileDiffResult = typeof VcsFileDiffResult.Type;
 
 export const VcsStatusStreamEvent = Schema.Union([
   Schema.TaggedStruct("snapshot", {

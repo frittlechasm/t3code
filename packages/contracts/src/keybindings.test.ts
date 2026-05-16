@@ -41,6 +41,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedDiffToggle.command, "diff.toggle");
 
+    const parsedFileExplorerToggleTree = yield* decode(KeybindingRule, {
+      key: "mod+shift+y",
+      command: "fileExplorer.toggleTree",
+    });
+    assert.strictEqual(parsedFileExplorerToggleTree.command, "fileExplorer.toggleTree");
+
     const parsedCommandPalette = yield* decode(KeybindingRule, {
       key: "mod+k",
       command: "commandPalette.toggle",

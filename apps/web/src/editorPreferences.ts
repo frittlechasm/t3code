@@ -26,10 +26,14 @@ export function resolveAndPersistPreferredEditor(
   return editor ?? null;
 }
 
-export async function openInPreferredEditor(api: LocalApi, targetPath: string): Promise<EditorId> {
+export async function openInPreferredEditor(
+  api: LocalApi,
+  targetPath: string,
+  filePath?: string,
+): Promise<EditorId> {
   const { availableEditors } = await api.server.getConfig();
   const editor = resolveAndPersistPreferredEditor(availableEditors);
   if (!editor) throw new Error("No available editors found.");
-  await api.shell.openInEditor(targetPath, editor);
+  await api.shell.openInEditor(targetPath, editor, filePath);
   return editor;
 }

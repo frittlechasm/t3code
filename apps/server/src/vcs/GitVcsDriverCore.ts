@@ -32,6 +32,8 @@ const isGitCommandError = Schema.is(GitCommandError);
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
+const FILE_DIFF_DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024;
+const FILE_DIFF_FULL_CONTEXT_LINES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
 const RANGE_COMMIT_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
@@ -134,6 +136,16 @@ function parsePorcelainPath(line: string): string | null {
   const parts = line.trim().split(/\s+/g);
   const filePath = parts.at(-1) ?? "";
   return filePath.length > 0 ? filePath : null;
+}
+
+function isSafeGitRelativePath(path: string): boolean {
+  if (path.startsWith("/") || path.startsWith("\\") || path.includes("\0")) {
+    return false;
+  }
+
+  return path
+    .split(/[\\/]+/g)
+    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
 function parseBranchLine(line: string): { name: string; current: boolean } | null {
@@ -1330,6 +1342,116 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     },
   );
 
+  const getFileDiff: GitVcsDriver.GitVcsDriverShape["getFileDiff"] = Effect.fn("getFileDiff")(
+    function* (input) {
+      if (!isSafeGitRelativePath(input.path)) {
+        return yield* createGitCommandError(
+          "GitVcsDriver.getFileDiff",
+          input.cwd,
+          ["diff", "--", input.path],
+          "File diff path must be a project-relative path.",
+        );
+      }
+
+      const includeStaged = input.includeStaged ?? true;
+      const includeUnstaged = input.includeUnstaged ?? true;
+      const maxBytes = input.maxBytes ?? FILE_DIFF_DEFAULT_MAX_OUTPUT_BYTES;
+      const whitespaceArgs = input.ignoreWhitespace ? ["--ignore-all-space"] : [];
+      const contextLines = input.contextLines ?? FILE_DIFF_FULL_CONTEXT_LINES;
+      const fullContextArgs = [`--unified=${contextLines}`];
+      const rangeArgs =
+        includeStaged && includeUnstaged
+          ? ["HEAD"]
+          : includeStaged
+            ? ["--cached"]
+            : includeUnstaged
+              ? []
+              : null;
+
+      if (rangeArgs === null) {
+        return { state: "empty", path: input.path };
+      }
+
+      const diffArgs = [
+        "diff",
+        ...rangeArgs,
+        "--patch",
+        "--find-renames",
+        "--minimal",
+        ...fullContextArgs,
+        ...whitespaceArgs,
+        "--",
+        input.path,
+      ];
+      const diffResult = yield* executeGit("GitVcsDriver.getFileDiff", input.cwd, diffArgs, {
+        allowNonZeroExit: true,
+        maxOutputBytes: maxBytes + 1,
+        appendTruncationMarker: true,
+      });
+      if (diffResult.exitCode !== 0) {
+        const detail = diffResult.stderr.trim() || "git diff failed";
+        return yield* createGitCommandError(
+          "GitVcsDriver.getFileDiff",
+          input.cwd,
+          diffArgs,
+          detail,
+        );
+      }
+
+      let patch = diffResult.stdout;
+      let wasTruncated = diffResult.stdoutTruncated;
+      if (patch.trim().length === 0 && includeStaged && includeUnstaged) {
+        const untrackedResult = yield* executeGit(
+          "GitVcsDriver.getFileDiff.untracked",
+          input.cwd,
+          ["ls-files", "--others", "--exclude-standard", "--", input.path],
+          {
+            allowNonZeroExit: true,
+            maxOutputBytes: maxBytes + 1,
+            appendTruncationMarker: true,
+          },
+        );
+        const isUntracked = untrackedResult.stdout
+          .split(/\r?\n/g)
+          .some((path) => path.trim() === input.path);
+        if (isUntracked) {
+          const untrackedDiffResult = yield* executeGit(
+            "GitVcsDriver.getFileDiff.untrackedPatch",
+            input.cwd,
+            [
+              "diff",
+              "--no-index",
+              "--patch",
+              "--minimal",
+              ...fullContextArgs,
+              ...whitespaceArgs,
+              "--",
+              "/dev/null",
+              input.path,
+            ],
+            {
+              allowNonZeroExit: true,
+              maxOutputBytes: maxBytes + 1,
+              appendTruncationMarker: true,
+            },
+          );
+          patch = untrackedDiffResult.stdout;
+          wasTruncated = untrackedDiffResult.stdoutTruncated;
+        }
+      }
+
+      const sizeBytes = Buffer.byteLength(patch);
+      if (wasTruncated || sizeBytes > maxBytes) {
+        return { state: "too_large", path: input.path, sizeBytes, maxBytes };
+      }
+      if (patch.trim().length === 0) {
+        return { state: "empty", path: input.path };
+      }
+
+      return { state: "patch", path: input.path, patch, sizeBytes };
+    },
+  );
+
   const status: GitVcsDriver.GitVcsDriverShape["status"] = (input) =>
     statusDetails(input.cwd).pipe(
       Effect.map((details) => ({
@@ -2117,6 +2239,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   return GitVcsDriver.GitVcsDriver.of({
     execute,
     status,
+    getFileDiff,
     statusDetails,
     statusDetailsLocal,
     prepareCommitContext,

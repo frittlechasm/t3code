@@ -1893,6 +1893,45 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("opens the file explorer for draft threads in a project", async () => {
+    setDraftThreadWithoutWorktree();
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsListEntries) {
+          return {
+            entries: [{ path: "package.json", kind: "file" }],
+            truncated: false,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await page.getByRole("button", { name: "Toggle file explorer" }).click();
+
+      await vi.waitFor(
+        () => {
+          expect(mounted.router.state.location.search).toMatchObject({ panel: "files" });
+          expect(document.body.textContent).not.toContain("No workspace available.");
+          const listRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.projectsListEntries,
+          );
+          expect(listRequest).toMatchObject({
+            _tag: WS_METHODS.projectsListEntries,
+            cwd: "/repo/project",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("does not leak a server worktree path into drawer runtime env when launch context clears it", async () => {
     const snapshot = createSnapshotForTargetUser({
       targetMessageId: "msg-user-launch-context-target" as MessageId,

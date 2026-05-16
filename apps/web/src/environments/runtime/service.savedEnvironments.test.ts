@@ -196,6 +196,13 @@ function createClient() {
     },
     projects: {
       searchEntries: vi.fn(async () => []),
+      listEntries: vi.fn(async () => ({ entries: [], truncated: false })),
+      readFile: vi.fn(async () => ({
+        relativePath: "README.md",
+        sizeBytes: 0,
+        state: "text",
+        contents: "",
+      })),
       writeFile: vi.fn(async () => undefined),
     },
     shell: {

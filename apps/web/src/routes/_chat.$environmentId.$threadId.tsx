@@ -13,6 +13,8 @@ import {
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
+  getOpenRightPanel,
+  isDiffPanelOpen,
   parseDiffRouteSearch,
   stripDiffSearchParams,
 } from "../diffRouteSearch";
@@ -21,15 +23,21 @@ import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
+import { RightPanelInlineSidebar } from "../components/RightPanelInlineSidebar";
 import { RightPanelSheet } from "../components/RightPanelSheet";
-import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { SidebarInset } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
+const FileExplorerPanel = lazy(() => import("../components/FileExplorerPanel"));
 const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(24rem,34vw,36rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 22 * 16;
 const DIFF_INLINE_SIDEBAR_MAX_WIDTH = 256 * 16;
-const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
+
+const FILE_EXPLORER_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_file_explorer_sidebar_width";
+const FILE_EXPLORER_INLINE_DEFAULT_WIDTH = "clamp(16rem,22vw,26rem)";
+const FILE_EXPLORER_INLINE_SIDEBAR_MIN_WIDTH = 14 * 16;
+const FILE_EXPLORER_INLINE_SIDEBAR_MAX_WIDTH = 64 * 16;
 
 const DiffLoadingFallback = (props: { mode: DiffPanelMode }) => {
   return (
@@ -46,6 +54,14 @@ const LazyDiffPanel = (props: { mode: DiffPanelMode }) => {
         <DiffPanel mode={props.mode} />
       </Suspense>
     </DiffWorkerPoolProvider>
+  );
+};
+
+const LazyFileExplorerPanel = (props: { mode: DiffPanelMode; onClose: () => void }) => {
+  return (
+    <Suspense fallback={<DiffPanelLoadingState label="Loading file explorer..." />}>
+      <FileExplorerPanel mode={props.mode} onClose={props.onClose} />
+    </Suspense>
   );
 };
 
@@ -66,75 +82,50 @@ const DiffPanelInlineSidebar = (props: {
     },
     [onCloseDiff, onOpenDiff],
   );
-  const shouldAcceptInlineSidebarWidth = useCallback(
-    ({ nextWidth, wrapper }: { nextWidth: number; wrapper: HTMLElement }) => {
-      const composerForm = document.querySelector<HTMLElement>("[data-chat-composer-form='true']");
-      if (!composerForm) return true;
-      const composerViewport = composerForm.parentElement;
-      if (!composerViewport) return true;
-      const previousSidebarWidth = wrapper.style.getPropertyValue("--sidebar-width");
-      wrapper.style.setProperty("--sidebar-width", `${nextWidth}px`);
 
-      const viewportStyle = window.getComputedStyle(composerViewport);
-      const viewportPaddingLeft = Number.parseFloat(viewportStyle.paddingLeft) || 0;
-      const viewportPaddingRight = Number.parseFloat(viewportStyle.paddingRight) || 0;
-      const viewportContentWidth = Math.max(
-        0,
-        composerViewport.clientWidth - viewportPaddingLeft - viewportPaddingRight,
-      );
-      const formRect = composerForm.getBoundingClientRect();
-      const composerFooter = composerForm.querySelector<HTMLElement>(
-        "[data-chat-composer-footer='true']",
-      );
-      const composerRightActions = composerForm.querySelector<HTMLElement>(
-        "[data-chat-composer-actions='right']",
-      );
-      const composerRightActionsWidth = composerRightActions?.getBoundingClientRect().width ?? 0;
-      const composerFooterGap = composerFooter
-        ? Number.parseFloat(window.getComputedStyle(composerFooter).columnGap) ||
-          Number.parseFloat(window.getComputedStyle(composerFooter).gap) ||
-          0
-        : 0;
-      const minimumComposerWidth =
-        COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX + composerRightActionsWidth + composerFooterGap;
-      const hasComposerOverflow = composerForm.scrollWidth > composerForm.clientWidth + 0.5;
-      const overflowsViewport = formRect.width > viewportContentWidth + 0.5;
-      const violatesMinimumComposerWidth = composerForm.clientWidth + 0.5 < minimumComposerWidth;
+  return (
+    <RightPanelInlineSidebar
+      open={diffOpen}
+      onOpenChange={onOpenChange}
+      defaultWidth={DIFF_INLINE_DEFAULT_WIDTH}
+      maxWidth={DIFF_INLINE_SIDEBAR_MAX_WIDTH}
+      minWidth={DIFF_INLINE_SIDEBAR_MIN_WIDTH}
+      storageKey={DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY}
+    >
+      {renderDiffContent ? <LazyDiffPanel mode="sidebar" /> : null}
+    </RightPanelInlineSidebar>
+  );
+};
 
-      if (previousSidebarWidth.length > 0) {
-        wrapper.style.setProperty("--sidebar-width", previousSidebarWidth);
-      } else {
-        wrapper.style.removeProperty("--sidebar-width");
+const FileExplorerPanelInlineSidebar = (props: {
+  filesOpen: boolean;
+  onCloseFiles: () => void;
+  onOpenFiles: () => void;
+  renderFilesContent: boolean;
+}) => {
+  const { filesOpen, onCloseFiles, onOpenFiles, renderFilesContent } = props;
+  const onOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        onOpenFiles();
+        return;
       }
-
-      return !hasComposerOverflow && !overflowsViewport && !violatesMinimumComposerWidth;
+      onCloseFiles();
     },
-    [],
+    [onCloseFiles, onOpenFiles],
   );
 
   return (
-    <SidebarProvider
-      defaultOpen={false}
-      open={diffOpen}
+    <RightPanelInlineSidebar
+      open={filesOpen}
       onOpenChange={onOpenChange}
-      className="w-auto min-h-0 flex-none bg-transparent"
-      style={{ "--sidebar-width": DIFF_INLINE_DEFAULT_WIDTH } as React.CSSProperties}
+      defaultWidth={FILE_EXPLORER_INLINE_DEFAULT_WIDTH}
+      maxWidth={FILE_EXPLORER_INLINE_SIDEBAR_MAX_WIDTH}
+      minWidth={FILE_EXPLORER_INLINE_SIDEBAR_MIN_WIDTH}
+      storageKey={FILE_EXPLORER_INLINE_SIDEBAR_WIDTH_STORAGE_KEY}
     >
-      <Sidebar
-        side="right"
-        collapsible="offcanvas"
-        className="border-l border-border bg-card text-foreground"
-        resizable={{
-          maxWidth: DIFF_INLINE_SIDEBAR_MAX_WIDTH,
-          minWidth: DIFF_INLINE_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: shouldAcceptInlineSidebarWidth,
-          storageKey: DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY,
-        }}
-      >
-        {renderDiffContent ? <LazyDiffPanel mode="sidebar" /> : null}
-        <SidebarRail />
-      </Sidebar>
-    </SidebarProvider>
+      {renderFilesContent ? <LazyFileExplorerPanel mode="sidebar" onClose={onCloseFiles} /> : null}
+    </RightPanelInlineSidebar>
   );
 };
 
@@ -167,9 +158,12 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
-  const diffOpen = search.diff === "1";
+  const openPanel = getOpenRightPanel(search);
+  const diffOpen = isDiffPanelOpen(search);
+  const filesOpen = openPanel === "files";
   const shouldUseDiffSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
+
   const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
     threadKey: currentThreadKey,
     hasOpenedDiff: diffOpen,
@@ -189,6 +183,27 @@ function ChatThreadRouteView() {
       };
     });
   }, [currentThreadKey]);
+
+  const [fileExplorerMountState, setFileExplorerMountState] = useState(() => ({
+    threadKey: currentThreadKey,
+    hasOpenedFiles: filesOpen,
+  }));
+  const hasOpenedFiles =
+    fileExplorerMountState.threadKey === currentThreadKey
+      ? fileExplorerMountState.hasOpenedFiles
+      : filesOpen;
+  const markFilesOpened = useCallback(() => {
+    setFileExplorerMountState((previous) => {
+      if (previous.threadKey === currentThreadKey && previous.hasOpenedFiles) {
+        return previous;
+      }
+      return {
+        threadKey: currentThreadKey,
+        hasOpenedFiles: true,
+      };
+    });
+  }, [currentThreadKey]);
+
   const closeDiff = useCallback(() => {
     if (!threadRef) {
       return;
@@ -196,7 +211,7 @@ function ChatThreadRouteView() {
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
-      search: { diff: undefined },
+      search: { panel: undefined, diff: undefined, diffTurnId: undefined, diffFilePath: undefined },
     });
   }, [navigate, threadRef]);
   const openDiff = useCallback(() => {
@@ -209,10 +224,35 @@ function ChatThreadRouteView() {
       params: buildThreadRouteParams(threadRef),
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
-        return { ...rest, diff: "1" };
+        return { ...rest, panel: "diff" };
       },
     });
   }, [markDiffOpened, navigate, threadRef]);
+
+  const closeFiles = useCallback(() => {
+    if (!threadRef) {
+      return;
+    }
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(threadRef),
+      search: { panel: undefined, diff: undefined, diffTurnId: undefined, diffFilePath: undefined },
+    });
+  }, [navigate, threadRef]);
+  const openFiles = useCallback(() => {
+    if (!threadRef) {
+      return;
+    }
+    markFilesOpened();
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(threadRef),
+      search: (previous) => {
+        const rest = stripDiffSearchParams(previous);
+        return { ...rest, panel: "files" };
+      },
+    });
+  }, [markFilesOpened, navigate, threadRef]);
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -236,6 +276,8 @@ function ChatThreadRouteView() {
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
+  const shouldRenderFilesContent = filesOpen || hasOpenedFiles;
+  const anyPanelOpen = diffOpen || filesOpen;
 
   if (!shouldUseDiffSheet) {
     return (
@@ -245,7 +287,8 @@ function ChatThreadRouteView() {
             environmentId={threadRef.environmentId}
             threadId={threadRef.threadId}
             onDiffPanelOpen={markDiffOpened}
-            reserveTitleBarControlInset={!diffOpen}
+            onFileExplorerPanelOpen={markFilesOpened}
+            reserveTitleBarControlInset={!anyPanelOpen}
             routeKind="server"
           />
         </SidebarInset>
@@ -254,6 +297,12 @@ function ChatThreadRouteView() {
           onCloseDiff={closeDiff}
           onOpenDiff={openDiff}
           renderDiffContent={shouldRenderDiffContent}
+        />
+        <FileExplorerPanelInlineSidebar
+          filesOpen={filesOpen}
+          onCloseFiles={closeFiles}
+          onOpenFiles={openFiles}
+          renderFilesContent={shouldRenderFilesContent}
         />
       </>
     );
@@ -266,11 +315,17 @@ function ChatThreadRouteView() {
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
           onDiffPanelOpen={markDiffOpened}
+          onFileExplorerPanelOpen={markFilesOpened}
           routeKind="server"
         />
       </SidebarInset>
       <RightPanelSheet open={diffOpen} onClose={closeDiff}>
         {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
+      </RightPanelSheet>
+      <RightPanelSheet open={filesOpen} onClose={closeFiles}>
+        {shouldRenderFilesContent ? (
+          <LazyFileExplorerPanel mode="sheet" onClose={closeFiles} />
+        ) : null}
       </RightPanelSheet>
     </>
   );
@@ -279,7 +334,7 @@ function ChatThreadRouteView() {
 export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
   validateSearch: (search) => parseDiffRouteSearch(search),
   search: {
-    middlewares: [retainSearchParams<DiffRouteSearch>(["diff"])],
+    middlewares: [retainSearchParams<DiffRouteSearch>(["panel", "diff"])],
   },
   component: ChatThreadRouteView,
 });

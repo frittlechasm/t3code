@@ -123,6 +123,24 @@ function hasSameShortcutContext(left: KeybindingRule, right: KeybindingRule): bo
   return leftContext === rightContext;
 }
 
+function migrateDefaultKeybindingRule(rule: KeybindingRule): {
+  readonly changed: boolean;
+  readonly rule: KeybindingRule;
+} {
+  if (
+    rule.command === "fileExplorer.toggle" &&
+    rule.key === "mod+shift+e" &&
+    rule.when === "!terminalFocus"
+  ) {
+    return {
+      changed: true,
+      rule: { key: "mod+shift+e", command: "fileExplorer.toggle" },
+    };
+  }
+
+  return { changed: false, rule };
+}
+
 function keybindingRuleFromUpsertInput(input: ServerUpsertKeybindingInput): KeybindingRule {
   return input.when === undefined
     ? { key: input.key, command: input.command }
@@ -496,7 +514,12 @@ const makeKeybindings = Effect.gen(function* () {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
-      const customConfig = runtimeConfig.keybindings;
+      let migratedDefaultRules = false;
+      const customConfig = runtimeConfig.keybindings.map((rule) => {
+        const migrated = migrateDefaultKeybindingRule(rule);
+        migratedDefaultRules ||= migrated.changed;
+        return migrated.rule;
+      });
       const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
@@ -533,7 +556,7 @@ const makeKeybindings = Effect.gen(function* () {
           reason: "shortcut context already used by existing rule",
         });
       }
-      if (missingDefaults.length === 0) {
+      if (missingDefaults.length === 0 && !migratedDefaultRules) {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
