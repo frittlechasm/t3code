@@ -34,6 +34,20 @@ export const MODEL_PICKER_JUMP_KEYBINDING_COMMANDS = [
 export type ModelPickerJumpKeybindingCommand =
   (typeof MODEL_PICKER_JUMP_KEYBINDING_COMMANDS)[number];
 
+export const TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS = [
+  "terminal.tab.1",
+  "terminal.tab.2",
+  "terminal.tab.3",
+  "terminal.tab.4",
+  "terminal.tab.5",
+  "terminal.tab.6",
+  "terminal.tab.7",
+  "terminal.tab.8",
+  "terminal.tab.9",
+] as const;
+export type TerminalTabJumpKeybindingCommand =
+  (typeof TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS)[number];
+
 export const THREAD_KEYBINDING_COMMANDS = [
   "thread.previous",
   "thread.next",
@@ -49,9 +63,16 @@ export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMA
 
 const STATIC_KEYBINDING_COMMANDS = [
   "terminal.toggle",
+  "terminal.togglePlacement",
   "terminal.split",
+  "terminal.splitHorizontal",
   "terminal.new",
   "terminal.close",
+  "terminal.tabPrevious",
+  "terminal.tabNext",
+  "terminal.splitFocusNext",
+  "terminal.pinDrawer",
+  ...TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS,
   "diff.toggle",
   "fileExplorer.toggle",
   "fileExplorer.toggleTree",

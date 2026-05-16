@@ -7,25 +7,35 @@
 
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime";
 import { type ScopedThreadRef, type TerminalEvent } from "@t3tools/contracts";
+import { DEFAULT_TERMINAL_PLACEMENT, type TerminalPlacement } from "@t3tools/contracts/settings";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { getClientSettings } from "./hooks/useSettings";
 import { resolveStorage } from "./lib/storage";
 import { terminalRunningSubprocessFromEvent } from "./terminalActivity";
 import {
   DEFAULT_THREAD_TERMINAL_HEIGHT,
+  DEFAULT_THREAD_TERMINAL_WIDTH,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
+  type TerminalSplitLayout,
+  type TerminalSplitOrientation,
   type ThreadTerminalGroup,
 } from "./types";
 
 interface ThreadTerminalState {
   terminalOpen: boolean;
-  terminalHeight: number;
+  terminalPlacement: TerminalPlacement;
   terminalIds: string[];
   runningTerminalIds: string[];
   activeTerminalId: string;
   terminalGroups: ThreadTerminalGroup[];
   activeTerminalGroupId: string;
+}
+
+export interface LogicalProjectTerminalDimensions {
+  terminalHeight: number;
+  terminalWidth: number;
 }
 
 export interface ThreadTerminalLaunchContext {
@@ -38,28 +48,69 @@ export interface TerminalEventEntry {
   event: TerminalEvent;
 }
 
+export interface PinnedTerminalDrawerState {
+  terminalOpen: boolean;
+  terminalPlacement: TerminalPlacement;
+  terminalIds: string[];
+  runningTerminalIds: string[];
+  activeTerminalId: string;
+  terminalGroups: ThreadTerminalGroup[];
+  activeTerminalGroupId: string;
+  pinnedSessionThreadId: string;
+}
+
 const TERMINAL_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
 const EMPTY_TERMINAL_EVENT_ENTRIES: ReadonlyArray<TerminalEventEntry> = [];
 const MAX_TERMINAL_EVENT_BUFFER = 200;
 
 interface PersistedTerminalStateStoreState {
-  terminalStateByThreadKey?: Record<string, ThreadTerminalState>;
+  terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;
+  terminalDimensionsByLogicalProjectKey?: Record<string, PersistedLogicalProjectTerminalDimensions>;
+  pinnedTerminalDrawerByProjectEnvironmentKey?: Record<string, PersistedPinnedTerminalDrawerState>;
 }
+
+type PersistedThreadTerminalState = Omit<ThreadTerminalState, "terminalPlacement"> & {
+  terminalPlacement?: TerminalPlacement;
+  terminalHeight?: number;
+};
+
+type PersistedLogicalProjectTerminalDimensions = Partial<LogicalProjectTerminalDimensions>;
+
+type PersistedPinnedTerminalDrawerState = PersistedThreadTerminalState & {
+  pinnedSessionThreadId: string;
+};
 
 export function migratePersistedTerminalStateStoreState(
   persistedState: unknown,
   version: number,
 ): PersistedTerminalStateStoreState {
-  if (version === 1 && persistedState && typeof persistedState === "object") {
+  if (
+    (version === 1 || version === 2 || version === 3) &&
+    persistedState &&
+    typeof persistedState === "object"
+  ) {
     const candidate = persistedState as PersistedTerminalStateStoreState;
     const nextTerminalStateByThreadKey = Object.fromEntries(
       Object.entries(candidate.terminalStateByThreadKey ?? {}).filter(([threadKey]) =>
         parseScopedThreadKey(threadKey),
       ),
     );
-    return { terminalStateByThreadKey: nextTerminalStateByThreadKey };
+    const nextTerminalDimensionsByLogicalProjectKey = Object.fromEntries(
+      Object.entries(candidate.terminalDimensionsByLogicalProjectKey ?? {}).filter(
+        ([logicalProjectKey]) => logicalProjectKey.trim().length > 0,
+      ),
+    );
+    return {
+      terminalStateByThreadKey: nextTerminalStateByThreadKey,
+      terminalDimensionsByLogicalProjectKey: nextTerminalDimensionsByLogicalProjectKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey: {},
+    };
   }
-  return { terminalStateByThreadKey: {} };
+  return {
+    terminalStateByThreadKey: {},
+    terminalDimensionsByLogicalProjectKey: {},
+    pinnedTerminalDrawerByProjectEnvironmentKey: {},
+  };
 }
 
 function createTerminalStateStorage() {
@@ -108,6 +159,103 @@ function normalizeTerminalGroupIds(terminalIds: string[]): string[] {
   return [...new Set(terminalIds.map((id) => id.trim()).filter((id) => id.length > 0))];
 }
 
+function normalizeTerminalSplitOrientation(
+  orientation: unknown,
+  terminalCount: number,
+): TerminalSplitOrientation | undefined {
+  if (terminalCount <= 1) return undefined;
+  return orientation === "horizontal" || orientation === "vertical" ? orientation : "vertical";
+}
+
+function createTerminalSplitLayoutFromTerminalIds(
+  terminalIds: string[],
+  orientation: TerminalSplitOrientation = "vertical",
+): TerminalSplitLayout | undefined {
+  const [firstTerminalId, ...restTerminalIds] = terminalIds;
+  if (!firstTerminalId) return undefined;
+  if (restTerminalIds.length === 0) {
+    return { type: "terminal", terminalId: firstTerminalId };
+  }
+  return {
+    type: "split",
+    orientation,
+    children: terminalIds.map((terminalId) => ({ type: "terminal", terminalId })),
+  };
+}
+
+function collectTerminalIdsFromSplitLayout(layout: TerminalSplitLayout): string[] {
+  if (layout.type === "terminal") return [layout.terminalId];
+  return layout.children.flatMap(collectTerminalIdsFromSplitLayout);
+}
+
+function normalizeTerminalSplitLayout(
+  layout: TerminalSplitLayout | undefined,
+  terminalIds: string[],
+  fallbackOrientation: TerminalSplitOrientation | undefined,
+): TerminalSplitLayout | undefined {
+  if (terminalIds.length <= 1) return undefined;
+  const validTerminalIds = new Set(terminalIds);
+  const seenTerminalIds = new Set<string>();
+
+  const normalizeNode = (
+    node: TerminalSplitLayout | undefined,
+  ): TerminalSplitLayout | undefined => {
+    if (!node || typeof node !== "object") return undefined;
+    if (node.type === "terminal") {
+      if (!validTerminalIds.has(node.terminalId) || seenTerminalIds.has(node.terminalId)) {
+        return undefined;
+      }
+      seenTerminalIds.add(node.terminalId);
+      return { type: "terminal", terminalId: node.terminalId };
+    }
+    if (node.type !== "split") return undefined;
+    const orientation = node.orientation === "horizontal" ? "horizontal" : "vertical";
+    const children = node.children.flatMap((child) => {
+      const normalized = normalizeNode(child);
+      return normalized ? [normalized] : [];
+    });
+    if (children.length === 0) return undefined;
+    if (children.length === 1) return children[0];
+    return { type: "split", orientation, children };
+  };
+
+  const normalizedLayout = normalizeNode(layout);
+  if (
+    normalizedLayout &&
+    arraysEqual(collectTerminalIdsFromSplitLayout(normalizedLayout), terminalIds)
+  ) {
+    return normalizedLayout;
+  }
+  return createTerminalSplitLayoutFromTerminalIds(terminalIds, fallbackOrientation ?? "vertical");
+}
+
+function terminalSplitLayoutsEqual(
+  left: TerminalSplitLayout | undefined,
+  right: TerminalSplitLayout | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  if (left.type !== right.type) return false;
+  if (left.type === "terminal" && right.type === "terminal") {
+    return left.terminalId === right.terminalId;
+  }
+  if (left.type !== "split" || right.type !== "split") return false;
+  if (left.orientation !== right.orientation) return false;
+  if (left.children.length !== right.children.length) return false;
+  for (let index = 0; index < left.children.length; index += 1) {
+    if (!terminalSplitLayoutsEqual(left.children[index], right.children[index])) return false;
+  }
+  return true;
+}
+
+function copyTerminalSplitLayout(layout: TerminalSplitLayout): TerminalSplitLayout {
+  if (layout.type === "terminal") return { type: "terminal", terminalId: layout.terminalId };
+  return {
+    type: "split",
+    orientation: layout.orientation,
+    children: layout.children.map(copyTerminalSplitLayout),
+  };
+}
+
 function normalizeTerminalGroups(
   terminalGroups: ThreadTerminalGroup[],
   terminalIds: string[],
@@ -131,10 +279,26 @@ function normalizeTerminalGroups(
       group.id.trim().length > 0
         ? group.id.trim()
         : fallbackGroupId(groupTerminalIds[0] ?? DEFAULT_THREAD_TERMINAL_ID);
-    nextGroups.push({
+    const nextGroup: ThreadTerminalGroup = {
       id: assignUniqueGroupId(baseGroupId, usedGroupIds),
       terminalIds: groupTerminalIds,
-    });
+    };
+    const splitOrientation = normalizeTerminalSplitOrientation(
+      group.splitOrientation,
+      groupTerminalIds.length,
+    );
+    if (splitOrientation) {
+      nextGroup.splitOrientation = splitOrientation;
+    }
+    const splitLayout = normalizeTerminalSplitLayout(
+      group.splitLayout,
+      groupTerminalIds,
+      splitOrientation,
+    );
+    if (splitLayout && splitLayout.type === "split") {
+      nextGroup.splitLayout = splitLayout;
+    }
+    nextGroups.push(nextGroup);
   }
 
   for (const terminalId of terminalIds) {
@@ -172,6 +336,8 @@ function terminalGroupsEqual(left: ThreadTerminalGroup[], right: ThreadTerminalG
     const rightGroup = right[index];
     if (!leftGroup || !rightGroup) return false;
     if (leftGroup.id !== rightGroup.id) return false;
+    if (leftGroup.splitOrientation !== rightGroup.splitOrientation) return false;
+    if (!terminalSplitLayoutsEqual(leftGroup.splitLayout, rightGroup.splitLayout)) return false;
     if (!arraysEqual(leftGroup.terminalIds, rightGroup.terminalIds)) return false;
   }
   return true;
@@ -180,7 +346,7 @@ function terminalGroupsEqual(left: ThreadTerminalGroup[], right: ThreadTerminalG
 function threadTerminalStateEqual(left: ThreadTerminalState, right: ThreadTerminalState): boolean {
   return (
     left.terminalOpen === right.terminalOpen &&
-    left.terminalHeight === right.terminalHeight &&
+    left.terminalPlacement === right.terminalPlacement &&
     left.activeTerminalId === right.activeTerminalId &&
     left.activeTerminalGroupId === right.activeTerminalGroupId &&
     arraysEqual(left.terminalIds, right.terminalIds) &&
@@ -191,7 +357,7 @@ function threadTerminalStateEqual(left: ThreadTerminalState, right: ThreadTermin
 
 const DEFAULT_THREAD_TERMINAL_STATE: ThreadTerminalState = Object.freeze({
   terminalOpen: false,
-  terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
+  terminalPlacement: DEFAULT_TERMINAL_PLACEMENT,
   terminalIds: [DEFAULT_THREAD_TERMINAL_ID],
   runningTerminalIds: [],
   activeTerminalId: DEFAULT_THREAD_TERMINAL_ID,
@@ -204,20 +370,59 @@ const DEFAULT_THREAD_TERMINAL_STATE: ThreadTerminalState = Object.freeze({
   activeTerminalGroupId: fallbackGroupId(DEFAULT_THREAD_TERMINAL_ID),
 });
 
-function createDefaultThreadTerminalState(): ThreadTerminalState {
+const DEFAULT_TERMINAL_DIMENSIONS: LogicalProjectTerminalDimensions = Object.freeze({
+  terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
+  terminalWidth: DEFAULT_THREAD_TERMINAL_WIDTH,
+});
+const DEFAULT_THREAD_TERMINAL_STATE_BY_PLACEMENT = new Map<TerminalPlacement, ThreadTerminalState>([
+  [DEFAULT_THREAD_TERMINAL_STATE.terminalPlacement, DEFAULT_THREAD_TERMINAL_STATE],
+]);
+const NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE = new WeakMap<
+  PersistedThreadTerminalState,
+  ThreadTerminalState
+>();
+const NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE = new WeakMap<
+  PersistedPinnedTerminalDrawerState,
+  PinnedTerminalDrawerState
+>();
+
+function createDefaultThreadTerminalState(
+  terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
+): ThreadTerminalState {
   return {
     ...DEFAULT_THREAD_TERMINAL_STATE,
+    terminalPlacement,
     terminalIds: [...DEFAULT_THREAD_TERMINAL_STATE.terminalIds],
     runningTerminalIds: [...DEFAULT_THREAD_TERMINAL_STATE.runningTerminalIds],
     terminalGroups: copyTerminalGroups(DEFAULT_THREAD_TERMINAL_STATE.terminalGroups),
   };
 }
 
-function getDefaultThreadTerminalState(): ThreadTerminalState {
-  return DEFAULT_THREAD_TERMINAL_STATE;
+function getDefaultThreadTerminalState(
+  terminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
+): ThreadTerminalState {
+  const cached = DEFAULT_THREAD_TERMINAL_STATE_BY_PLACEMENT.get(terminalPlacement);
+  if (cached) {
+    return cached;
+  }
+  const defaultState = createDefaultThreadTerminalState(terminalPlacement);
+  DEFAULT_THREAD_TERMINAL_STATE_BY_PLACEMENT.set(terminalPlacement, defaultState);
+  return defaultState;
 }
 
-function normalizeThreadTerminalState(state: ThreadTerminalState): ThreadTerminalState {
+function normalizeTerminalPlacement(placement: unknown): TerminalPlacement {
+  return placement === "right" || placement === "bottom" ? placement : DEFAULT_TERMINAL_PLACEMENT;
+}
+
+function defaultTerminalPlacementFromSettings(): TerminalPlacement {
+  return getClientSettings().defaultTerminalPlacement;
+}
+
+function normalizeThreadTerminalState(state: PersistedThreadTerminalState): ThreadTerminalState {
+  const cached = NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE.get(state);
+  if (cached) {
+    return cached;
+  }
   const terminalIds = normalizeTerminalIds(state.terminalIds);
   const nextTerminalIds = terminalIds.length > 0 ? terminalIds : [DEFAULT_THREAD_TERMINAL_ID];
   const runningTerminalIds = normalizeRunningTerminalIds(state.runningTerminalIds, nextTerminalIds);
@@ -235,10 +440,7 @@ function normalizeThreadTerminalState(state: ThreadTerminalState): ThreadTermina
 
   const normalized: ThreadTerminalState = {
     terminalOpen: state.terminalOpen,
-    terminalHeight:
-      Number.isFinite(state.terminalHeight) && state.terminalHeight > 0
-        ? state.terminalHeight
-        : DEFAULT_THREAD_TERMINAL_HEIGHT,
+    terminalPlacement: normalizeTerminalPlacement(state.terminalPlacement),
     terminalIds: nextTerminalIds,
     runningTerminalIds,
     activeTerminalId,
@@ -249,16 +451,32 @@ function normalizeThreadTerminalState(state: ThreadTerminalState): ThreadTermina
       terminalGroups[0]?.id ??
       fallbackGroupId(DEFAULT_THREAD_TERMINAL_ID),
   };
-  return threadTerminalStateEqual(state, normalized) ? state : normalized;
+  const result =
+    state.terminalPlacement !== undefined &&
+    threadTerminalStateEqual(state as ThreadTerminalState, normalized)
+      ? (state as ThreadTerminalState)
+      : normalized;
+  NORMALIZED_THREAD_TERMINAL_STATE_BY_SOURCE.set(state, result);
+  return result;
 }
 
-function isDefaultThreadTerminalState(state: ThreadTerminalState): boolean {
+function isDefaultThreadTerminalState(
+  state: ThreadTerminalState,
+  defaultTerminalPlacement: TerminalPlacement = DEFAULT_TERMINAL_PLACEMENT,
+): boolean {
   const normalized = normalizeThreadTerminalState(state);
-  return threadTerminalStateEqual(normalized, DEFAULT_THREAD_TERMINAL_STATE);
+  return threadTerminalStateEqual(
+    normalized,
+    getDefaultThreadTerminalState(defaultTerminalPlacement),
+  );
 }
 
 function isValidTerminalId(terminalId: string): boolean {
   return terminalId.trim().length > 0;
+}
+
+function logicalProjectTerminalDimensionsKey(logicalProjectKey: string): string {
+  return logicalProjectKey.trim();
 }
 
 function terminalThreadKey(threadRef: ScopedThreadRef): string {
@@ -269,11 +487,71 @@ function terminalEventBufferKey(threadRef: ScopedThreadRef, terminalId: string):
   return `${terminalThreadKey(threadRef)}\u0000${terminalId}`;
 }
 
+export function pinnedSessionThreadId(environmentId: string, logicalProjectKey: string): string {
+  return `pinned ${environmentId} ${logicalProjectKey}`;
+}
+
+export function isPinnedSessionThreadId(id: string): boolean {
+  return id.startsWith("pinned\0");
+}
+
+function pinnedTerminalDrawerKey(logicalProjectKey: string, environmentId: string): string {
+  return `${logicalProjectKey} ${environmentId}`;
+}
+
 function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[] {
-  return groups.map((group) => ({
-    id: group.id,
-    terminalIds: [...group.terminalIds],
-  }));
+  return groups.map((group) => {
+    const nextGroup: ThreadTerminalGroup = {
+      id: group.id,
+      terminalIds: [...group.terminalIds],
+    };
+    if (group.splitOrientation) {
+      nextGroup.splitOrientation = group.splitOrientation;
+    }
+    if (group.splitLayout) {
+      nextGroup.splitLayout = copyTerminalSplitLayout(group.splitLayout);
+    }
+    return nextGroup;
+  });
+}
+
+function insertTerminalIntoSplitLayout(
+  layout: TerminalSplitLayout,
+  anchorTerminalId: string,
+  terminalId: string,
+  orientation: TerminalSplitOrientation,
+): TerminalSplitLayout {
+  if (layout.type === "terminal") {
+    if (layout.terminalId !== anchorTerminalId) return layout;
+    return {
+      type: "split",
+      orientation,
+      children: [layout, { type: "terminal", terminalId }],
+    };
+  }
+  return {
+    ...layout,
+    children: layout.children.map((child) =>
+      insertTerminalIntoSplitLayout(child, anchorTerminalId, terminalId, orientation),
+    ),
+  };
+}
+
+function pruneTerminalFromSplitLayout(
+  layout: TerminalSplitLayout | undefined,
+  terminalId: string,
+): TerminalSplitLayout | undefined {
+  if (!layout) return undefined;
+  if (layout.type === "terminal") {
+    return layout.terminalId === terminalId ? undefined : layout;
+  }
+  const children = layout.children.flatMap((child) => {
+    const pruned = pruneTerminalFromSplitLayout(child, terminalId);
+    return pruned ? [pruned] : [];
+  });
+  if (children.length === 0) return undefined;
+  if (children.length === 1) return children[0];
+  return { ...layout, children };
 }
 
 function appendTerminalEventEntry(
@@ -315,6 +593,7 @@ function upsertTerminalIntoGroups(
   state: ThreadTerminalState,
   terminalId: string,
   mode: "split" | "new",
+  options: { splitOrientation?: TerminalSplitOrientation; anchorTerminalId?: string } = {},
 ): ThreadTerminalState {
   const normalized = normalizeThreadTerminalState(state);
   if (!isValidTerminalId(terminalId)) {
@@ -351,19 +630,20 @@ function upsertTerminalIntoGroups(
     });
   }
 
-  let activeGroupIndex = terminalGroups.findIndex(
-    (group) => group.id === normalized.activeTerminalGroupId,
-  );
+  const anchorTerminalId =
+    options.anchorTerminalId && normalized.terminalIds.includes(options.anchorTerminalId)
+      ? options.anchorTerminalId
+      : normalized.activeTerminalId;
+  let activeGroupIndex = findGroupIndexByTerminalId(terminalGroups, anchorTerminalId);
   if (activeGroupIndex < 0) {
-    activeGroupIndex = findGroupIndexByTerminalId(terminalGroups, normalized.activeTerminalId);
+    activeGroupIndex = terminalGroups.findIndex(
+      (group) => group.id === normalized.activeTerminalGroupId,
+    );
   }
   if (activeGroupIndex < 0) {
     const usedGroupIds = new Set(terminalGroups.map((group) => group.id));
-    const nextGroupId = assignUniqueGroupId(
-      fallbackGroupId(normalized.activeTerminalId),
-      usedGroupIds,
-    );
-    terminalGroups.push({ id: nextGroupId, terminalIds: [normalized.activeTerminalId] });
+    const nextGroupId = assignUniqueGroupId(fallbackGroupId(anchorTerminalId), usedGroupIds);
+    terminalGroups.push({ id: nextGroupId, terminalIds: [anchorTerminalId] });
     activeGroupIndex = terminalGroups.length - 1;
   }
 
@@ -381,11 +661,26 @@ function upsertTerminalIntoGroups(
   }
 
   if (!destinationGroup.terminalIds.includes(terminalId)) {
-    const anchorIndex = destinationGroup.terminalIds.indexOf(normalized.activeTerminalId);
+    const previousTerminalIds = [...destinationGroup.terminalIds];
+    const anchorIndex = destinationGroup.terminalIds.indexOf(anchorTerminalId);
     if (anchorIndex >= 0) {
       destinationGroup.terminalIds.splice(anchorIndex + 1, 0, terminalId);
     } else {
       destinationGroup.terminalIds.push(terminalId);
+    }
+    const splitOrientation = options.splitOrientation ?? "vertical";
+    destinationGroup.splitOrientation = destinationGroup.splitOrientation ?? splitOrientation;
+    const baseLayout =
+      destinationGroup.splitLayout ??
+      createTerminalSplitLayoutFromTerminalIds(
+        previousTerminalIds,
+        destinationGroup.splitOrientation,
+      );
+    const nextSplitLayout = baseLayout
+      ? insertTerminalIntoSplitLayout(baseLayout, anchorTerminalId, terminalId, splitOrientation)
+      : createTerminalSplitLayoutFromTerminalIds(destinationGroup.terminalIds, splitOrientation);
+    if (nextSplitLayout) {
+      destinationGroup.splitLayout = nextSplitLayout;
     }
   }
 
@@ -405,16 +700,33 @@ function setThreadTerminalOpen(state: ThreadTerminalState, open: boolean): Threa
   return { ...normalized, terminalOpen: open };
 }
 
-function setThreadTerminalHeight(state: ThreadTerminalState, height: number): ThreadTerminalState {
+function setThreadTerminalPlacement(
+  state: ThreadTerminalState,
+  placement: TerminalPlacement,
+): ThreadTerminalState {
   const normalized = normalizeThreadTerminalState(state);
-  if (!Number.isFinite(height) || height <= 0 || normalized.terminalHeight === height) {
-    return normalized;
-  }
-  return { ...normalized, terminalHeight: height };
+  if (normalized.terminalPlacement === placement) return normalized;
+  return { ...normalized, terminalPlacement: placement };
 }
 
-function splitThreadTerminal(state: ThreadTerminalState, terminalId: string): ThreadTerminalState {
-  return upsertTerminalIntoGroups(state, terminalId, "split");
+function toggleThreadTerminalPlacement(state: ThreadTerminalState): ThreadTerminalState {
+  const normalized = normalizeThreadTerminalState(state);
+  return {
+    ...normalized,
+    terminalPlacement: normalized.terminalPlacement === "bottom" ? "right" : "bottom",
+  };
+}
+
+function splitThreadTerminal(
+  state: ThreadTerminalState,
+  terminalId: string,
+  orientation: TerminalSplitOrientation,
+  anchorTerminalId?: string,
+): ThreadTerminalState {
+  return upsertTerminalIntoGroups(state, terminalId, "split", {
+    splitOrientation: orientation,
+    ...(anchorTerminalId !== undefined ? { anchorTerminalId } : {}),
+  });
 }
 
 function newThreadTerminal(state: ThreadTerminalState, terminalId: string): ThreadTerminalState {
@@ -453,7 +765,7 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
 
   const remainingTerminalIds = normalized.terminalIds.filter((id) => id !== terminalId);
   if (remainingTerminalIds.length === 0) {
-    return createDefaultThreadTerminalState();
+    return createDefaultThreadTerminalState(normalized.terminalPlacement);
   }
 
   const closedTerminalIndex = normalized.terminalIds.indexOf(terminalId);
@@ -465,10 +777,21 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
       : normalized.activeTerminalId;
 
   const terminalGroups = normalized.terminalGroups
-    .map((group) => ({
-      ...group,
-      terminalIds: group.terminalIds.filter((id) => id !== terminalId),
-    }))
+    .map((group) => {
+      const terminalIds = group.terminalIds.filter((id) => id !== terminalId);
+      const nextGroup: ThreadTerminalGroup = {
+        id: group.id,
+        terminalIds,
+      };
+      if (group.splitOrientation && terminalIds.length > 1) {
+        nextGroup.splitOrientation = group.splitOrientation;
+      }
+      const splitLayout = pruneTerminalFromSplitLayout(group.splitLayout, terminalId);
+      if (splitLayout && splitLayout.type === "split") {
+        nextGroup.splitLayout = splitLayout;
+      }
+      return nextGroup;
+    })
     .filter((group) => group.terminalIds.length > 0);
 
   const nextActiveTerminalGroupId =
@@ -478,13 +801,66 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
 
   return normalizeThreadTerminalState({
     terminalOpen: normalized.terminalOpen,
-    terminalHeight: normalized.terminalHeight,
+    terminalPlacement: normalized.terminalPlacement,
     terminalIds: remainingTerminalIds,
     runningTerminalIds: normalized.runningTerminalIds.filter((id) => id !== terminalId),
     activeTerminalId: nextActiveTerminalId,
     terminalGroups,
     activeTerminalGroupId: nextActiveTerminalGroupId,
   });
+}
+
+function pinnedTerminalDrawerStateFromThreadState(
+  state: ThreadTerminalState,
+  pinnedSessionThreadId: string,
+): PinnedTerminalDrawerState {
+  return {
+    terminalOpen: state.terminalOpen,
+    terminalPlacement: state.terminalPlacement,
+    terminalIds: [...state.terminalIds],
+    runningTerminalIds: [...state.runningTerminalIds],
+    activeTerminalId: state.activeTerminalId,
+    terminalGroups: copyTerminalGroups(state.terminalGroups),
+    activeTerminalGroupId: state.activeTerminalGroupId,
+    pinnedSessionThreadId,
+  };
+}
+
+function normalizeTerminalDimension(value: unknown, fallback: number): number {
+  return Number.isFinite(value) && typeof value === "number" && value > 0 ? value : fallback;
+}
+
+function normalizeLogicalProjectTerminalDimensions(
+  dimensions: PersistedLogicalProjectTerminalDimensions | undefined,
+  fallbackHeight: number = DEFAULT_THREAD_TERMINAL_HEIGHT,
+): LogicalProjectTerminalDimensions {
+  return {
+    terminalHeight: normalizeTerminalDimension(dimensions?.terminalHeight, fallbackHeight),
+    terminalWidth: normalizeTerminalDimension(
+      dimensions?.terminalWidth,
+      DEFAULT_THREAD_TERMINAL_WIDTH,
+    ),
+  };
+}
+
+function logicalProjectTerminalDimensionsEqual(
+  left: LogicalProjectTerminalDimensions,
+  right: LogicalProjectTerminalDimensions,
+): boolean {
+  return left.terminalHeight === right.terminalHeight && left.terminalWidth === right.terminalWidth;
+}
+
+function legacyTerminalHeightForThread(
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
+  threadRef: ScopedThreadRef | null | undefined,
+): number | undefined {
+  if (!threadRef || threadRef.threadId.length === 0) {
+    return undefined;
+  }
+  const legacyHeight = terminalStateByThreadKey[terminalThreadKey(threadRef)]?.terminalHeight;
+  return Number.isFinite(legacyHeight) && typeof legacyHeight === "number" && legacyHeight > 0
+    ? legacyHeight
+    : undefined;
 }
 
 function setThreadTerminalActivity(
@@ -509,33 +885,155 @@ function setThreadTerminalActivity(
   return { ...normalized, runningTerminalIds: [...runningTerminalIds] };
 }
 
+function normalizePinnedTerminalDrawerState(
+  state: PersistedPinnedTerminalDrawerState,
+): PinnedTerminalDrawerState {
+  const cached = NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE.get(state);
+  if (cached) return cached;
+  const threadState = normalizeThreadTerminalState(state);
+  const result: PinnedTerminalDrawerState = {
+    ...threadState,
+    pinnedSessionThreadId: state.pinnedSessionThreadId,
+  };
+  NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE.set(state, result);
+  return result;
+}
+
+function pinnedTerminalDrawerStateEqual(
+  left: PinnedTerminalDrawerState,
+  right: PinnedTerminalDrawerState,
+): boolean {
+  return (
+    left.pinnedSessionThreadId === right.pinnedSessionThreadId &&
+    threadTerminalStateEqual(left, right)
+  );
+}
+
+function updatePinnedTerminalDrawerStateByKey(
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>,
+  logicalProjectKey: string,
+  environmentId: string,
+  updater: (state: PinnedTerminalDrawerState) => ThreadTerminalState,
+): Record<string, PersistedPinnedTerminalDrawerState> {
+  const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+  const current = pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+  if (!current) return pinnedTerminalDrawerByProjectEnvironmentKey;
+
+  const normalized = normalizePinnedTerminalDrawerState(current);
+  const nextThreadState = updater(normalized);
+  const nextPinnedState = pinnedTerminalDrawerStateFromThreadState(
+    nextThreadState,
+    normalized.pinnedSessionThreadId,
+  );
+  if (pinnedTerminalDrawerStateEqual(normalized, nextPinnedState)) {
+    return pinnedTerminalDrawerByProjectEnvironmentKey;
+  }
+  return {
+    ...pinnedTerminalDrawerByProjectEnvironmentKey,
+    [drawerKey]: nextPinnedState,
+  };
+}
+
+export function selectPinnedTerminalDrawerState(
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>,
+  logicalProjectKey: string | null | undefined,
+  environmentId: string | null | undefined,
+): PinnedTerminalDrawerState | null {
+  if (
+    typeof logicalProjectKey !== "string" ||
+    logicalProjectKey.trim().length === 0 ||
+    typeof environmentId !== "string" ||
+    environmentId.trim().length === 0
+  ) {
+    return null;
+  }
+  const key = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+  const persisted = pinnedTerminalDrawerByProjectEnvironmentKey[key];
+  return persisted ? normalizePinnedTerminalDrawerState(persisted) : null;
+}
+
 export function selectThreadTerminalState(
-  terminalStateByThreadKey: Record<string, ThreadTerminalState>,
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
   threadRef: ScopedThreadRef | null | undefined,
+  defaultTerminalPlacement: TerminalPlacement = defaultTerminalPlacementFromSettings(),
 ): ThreadTerminalState {
   if (!threadRef || threadRef.threadId.length === 0) {
-    return getDefaultThreadTerminalState();
+    return getDefaultThreadTerminalState(defaultTerminalPlacement);
   }
-  return terminalStateByThreadKey[terminalThreadKey(threadRef)] ?? getDefaultThreadTerminalState();
+  const persisted = terminalStateByThreadKey[terminalThreadKey(threadRef)];
+  return persisted
+    ? normalizeThreadTerminalState(persisted)
+    : getDefaultThreadTerminalState(defaultTerminalPlacement);
+}
+
+export function selectLogicalProjectTerminalDimensions(
+  terminalDimensionsByLogicalProjectKey: Record<string, PersistedLogicalProjectTerminalDimensions>,
+  logicalProjectKey: string | null | undefined,
+  options?: {
+    terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;
+    threadRef?: ScopedThreadRef | null | undefined;
+  },
+): LogicalProjectTerminalDimensions {
+  const fallbackHeight =
+    legacyTerminalHeightForThread(options?.terminalStateByThreadKey ?? {}, options?.threadRef) ??
+    DEFAULT_THREAD_TERMINAL_HEIGHT;
+  const normalizedLogicalProjectKey =
+    typeof logicalProjectKey === "string"
+      ? logicalProjectTerminalDimensionsKey(logicalProjectKey)
+      : "";
+  if (normalizedLogicalProjectKey.length === 0) {
+    return normalizeLogicalProjectTerminalDimensions(undefined, fallbackHeight);
+  }
+  return normalizeLogicalProjectTerminalDimensions(
+    terminalDimensionsByLogicalProjectKey[normalizedLogicalProjectKey],
+    fallbackHeight,
+  );
+}
+
+export type ActiveTerminalDrawerState =
+  | { pinned: true; state: PinnedTerminalDrawerState }
+  | { pinned: false; state: ThreadTerminalState };
+
+export function selectActiveTerminalDrawerState(
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>,
+  logicalProjectKey: string | null | undefined,
+  environmentId: string | null | undefined,
+  threadRef: ScopedThreadRef | null | undefined,
+): ActiveTerminalDrawerState {
+  const pinned = selectPinnedTerminalDrawerState(
+    pinnedTerminalDrawerByProjectEnvironmentKey,
+    logicalProjectKey,
+    environmentId,
+  );
+  if (pinned !== null) {
+    return { pinned: true, state: pinned };
+  }
+  return { pinned: false, state: selectThreadTerminalState(terminalStateByThreadKey, threadRef) };
 }
 
 function updateTerminalStateByThreadKey(
-  terminalStateByThreadKey: Record<string, ThreadTerminalState>,
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>,
   threadRef: ScopedThreadRef,
   updater: (state: ThreadTerminalState) => ThreadTerminalState,
-): Record<string, ThreadTerminalState> {
+): Record<string, PersistedThreadTerminalState> {
   if (threadRef.threadId.length === 0) {
     return terminalStateByThreadKey;
   }
 
   const threadKey = terminalThreadKey(threadRef);
-  const current = selectThreadTerminalState(terminalStateByThreadKey, threadRef);
+  const defaultTerminalPlacement = defaultTerminalPlacementFromSettings();
+  const current = selectThreadTerminalState(
+    terminalStateByThreadKey,
+    threadRef,
+    defaultTerminalPlacement,
+  );
   const next = updater(current);
   if (next === current) {
     return terminalStateByThreadKey;
   }
 
-  if (isDefaultThreadTerminalState(next)) {
+  if (isDefaultThreadTerminalState(next, defaultTerminalPlacement)) {
     if (terminalStateByThreadKey[threadKey] === undefined) {
       return terminalStateByThreadKey;
     }
@@ -564,13 +1062,23 @@ export function selectTerminalEventEntries(
 }
 
 interface TerminalStateStoreState {
-  terminalStateByThreadKey: Record<string, ThreadTerminalState>;
+  terminalStateByThreadKey: Record<string, PersistedThreadTerminalState>;
+  terminalDimensionsByLogicalProjectKey: Record<string, PersistedLogicalProjectTerminalDimensions>;
+  pinnedTerminalDrawerByProjectEnvironmentKey: Record<string, PersistedPinnedTerminalDrawerState>;
   terminalLaunchContextByThreadKey: Record<string, ThreadTerminalLaunchContext>;
   terminalEventEntriesByKey: Record<string, ReadonlyArray<TerminalEventEntry>>;
   nextTerminalEventId: number;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
-  setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
-  splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
+  setTerminalPlacement: (threadRef: ScopedThreadRef, placement: TerminalPlacement) => void;
+  toggleTerminalPlacement: (threadRef: ScopedThreadRef) => void;
+  setTerminalHeight: (logicalProjectKey: string, height: number) => void;
+  setTerminalWidth: (logicalProjectKey: string, width: number) => void;
+  splitTerminal: (
+    threadRef: ScopedThreadRef,
+    terminalId: string,
+    orientation?: TerminalSplitOrientation,
+    anchorTerminalId?: string,
+  ) => void;
   newTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   ensureTerminal: (
     threadRef: ScopedThreadRef,
@@ -594,6 +1102,32 @@ interface TerminalStateStoreState {
   clearTerminalState: (threadRef: ScopedThreadRef) => void;
   removeTerminalState: (threadRef: ScopedThreadRef) => void;
   removeOrphanedTerminalStates: (activeThreadKeys: Set<string>) => void;
+  pinTerminalDrawer: (threadRef: ScopedThreadRef, logicalProjectKey: string) => void;
+  unpinTerminalDrawer: (
+    logicalProjectKey: string,
+    environmentId: string,
+    threadRef: ScopedThreadRef,
+  ) => void;
+  closePinnedTerminal: (
+    logicalProjectKey: string,
+    environmentId: string,
+    terminalId: string,
+  ) => void;
+  splitPinnedTerminal: (
+    logicalProjectKey: string,
+    environmentId: string,
+    terminalId: string,
+    orientation?: TerminalSplitOrientation,
+    anchorTerminalId?: string,
+  ) => void;
+  newPinnedTerminal: (logicalProjectKey: string, environmentId: string, terminalId: string) => void;
+  setActivePinnedTerminal: (
+    logicalProjectKey: string,
+    environmentId: string,
+    terminalId: string,
+  ) => void;
+  togglePinnedTerminalPlacement: (logicalProjectKey: string, environmentId: string) => void;
+  removePinnedTerminalDrawersByEnvironment: (environmentId: string) => void;
 }
 
 export const useTerminalStateStore = create<TerminalStateStoreState>()(
@@ -617,18 +1151,75 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
           };
         });
       };
+      const updateTerminalDimensions = (
+        logicalProjectKey: string,
+        updater: (dimensions: LogicalProjectTerminalDimensions) => LogicalProjectTerminalDimensions,
+      ) => {
+        set((state) => {
+          const dimensionKey = logicalProjectTerminalDimensionsKey(logicalProjectKey);
+          if (dimensionKey.length === 0) {
+            return state;
+          }
+          const current = selectLogicalProjectTerminalDimensions(
+            state.terminalDimensionsByLogicalProjectKey,
+            dimensionKey,
+          );
+          const next = updater(current);
+          if (
+            next === current ||
+            logicalProjectTerminalDimensionsEqual(current, next) ||
+            logicalProjectTerminalDimensionsEqual(next, DEFAULT_TERMINAL_DIMENSIONS)
+          ) {
+            if (
+              logicalProjectTerminalDimensionsEqual(next, DEFAULT_TERMINAL_DIMENSIONS) &&
+              state.terminalDimensionsByLogicalProjectKey[dimensionKey] !== undefined
+            ) {
+              const { [dimensionKey]: _removed, ...rest } =
+                state.terminalDimensionsByLogicalProjectKey;
+              return { terminalDimensionsByLogicalProjectKey: rest };
+            }
+            return state;
+          }
+          return {
+            terminalDimensionsByLogicalProjectKey: {
+              ...state.terminalDimensionsByLogicalProjectKey,
+              [dimensionKey]: next,
+            },
+          };
+        });
+      };
 
       return {
         terminalStateByThreadKey: {},
+        terminalDimensionsByLogicalProjectKey: {},
+        pinnedTerminalDrawerByProjectEnvironmentKey: {},
         terminalLaunchContextByThreadKey: {},
         terminalEventEntriesByKey: {},
         nextTerminalEventId: 1,
         setTerminalOpen: (threadRef, open) =>
           updateTerminal(threadRef, (state) => setThreadTerminalOpen(state, open)),
-        setTerminalHeight: (threadRef, height) =>
-          updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
-        splitTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId)),
+        setTerminalPlacement: (threadRef, placement) =>
+          updateTerminal(threadRef, (state) => setThreadTerminalPlacement(state, placement)),
+        toggleTerminalPlacement: (threadRef) =>
+          updateTerminal(threadRef, (state) => toggleThreadTerminalPlacement(state)),
+        setTerminalHeight: (logicalProjectKey, height) =>
+          updateTerminalDimensions(logicalProjectKey, (dimensions) => {
+            const terminalHeight = normalizeTerminalDimension(height, dimensions.terminalHeight);
+            return terminalHeight === dimensions.terminalHeight
+              ? dimensions
+              : { ...dimensions, terminalHeight };
+          }),
+        setTerminalWidth: (logicalProjectKey, width) =>
+          updateTerminalDimensions(logicalProjectKey, (dimensions) => {
+            const terminalWidth = normalizeTerminalDimension(width, dimensions.terminalWidth);
+            return terminalWidth === dimensions.terminalWidth
+              ? dimensions
+              : { ...dimensions, terminalWidth };
+          }),
+        splitTerminal: (threadRef, terminalId, orientation = "vertical", anchorTerminalId) =>
+          updateTerminal(threadRef, (state) =>
+            splitThreadTerminal(state, terminalId, orientation, anchorTerminalId),
+          ),
         newTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => newThreadTerminal(state, terminalId)),
         ensureTerminal: (threadRef, terminalId, options) =>
@@ -740,7 +1331,7 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             const nextTerminalStateByThreadKey = updateTerminalStateByThreadKey(
               state.terminalStateByThreadKey,
               threadRef,
-              () => createDefaultThreadTerminalState(),
+              () => createDefaultThreadTerminalState(defaultTerminalPlacementFromSettings()),
             );
             const hadLaunchContext =
               state.terminalLaunchContextByThreadKey[threadKey] !== undefined;
@@ -832,15 +1423,186 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
               terminalEventEntriesByKey: nextTerminalEventEntriesByKey,
             };
           }),
+        pinTerminalDrawer: (threadRef, logicalProjectKey) =>
+          set((state) => {
+            if (logicalProjectKey.trim().length === 0 || threadRef.environmentId.length === 0) {
+              return state;
+            }
+            const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, threadRef.environmentId);
+            const currentThreadState = selectThreadTerminalState(
+              state.terminalStateByThreadKey,
+              threadRef,
+            );
+            const sessionThreadId = pinnedSessionThreadId(
+              threadRef.environmentId,
+              logicalProjectKey,
+            );
+            const pinnedState: PinnedTerminalDrawerState = {
+              terminalOpen: currentThreadState.terminalOpen,
+              terminalPlacement: currentThreadState.terminalPlacement,
+              terminalIds: [...currentThreadState.terminalIds],
+              runningTerminalIds: [...currentThreadState.runningTerminalIds],
+              activeTerminalId: currentThreadState.activeTerminalId,
+              terminalGroups: copyTerminalGroups(currentThreadState.terminalGroups),
+              activeTerminalGroupId: currentThreadState.activeTerminalGroupId,
+              pinnedSessionThreadId: sessionThreadId,
+            };
+            const existing = state.pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+            if (
+              existing &&
+              pinnedTerminalDrawerStateEqual(
+                normalizePinnedTerminalDrawerState(existing),
+                pinnedState,
+              )
+            ) {
+              return state;
+            }
+            return {
+              pinnedTerminalDrawerByProjectEnvironmentKey: {
+                ...state.pinnedTerminalDrawerByProjectEnvironmentKey,
+                [drawerKey]: pinnedState,
+              },
+            };
+          }),
+        unpinTerminalDrawer: (logicalProjectKey, environmentId, threadRef) =>
+          set((state) => {
+            const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+            const pinnedState = state.pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+            if (!pinnedState) return state;
+
+            const normalized = normalizePinnedTerminalDrawerState(pinnedState);
+            const freshThreadState: ThreadTerminalState = {
+              terminalOpen: normalized.terminalOpen,
+              terminalPlacement: normalized.terminalPlacement,
+              terminalIds: [...normalized.terminalIds],
+              runningTerminalIds: [],
+              activeTerminalId: normalized.activeTerminalId,
+              terminalGroups: copyTerminalGroups(normalized.terminalGroups),
+              activeTerminalGroupId: normalized.activeTerminalGroupId,
+            };
+
+            const nextTerminalStateByThreadKey = updateTerminalStateByThreadKey(
+              state.terminalStateByThreadKey,
+              threadRef,
+              () => freshThreadState,
+            );
+
+            const { [drawerKey]: _removed, ...nextPinnedDrawerByKey } =
+              state.pinnedTerminalDrawerByProjectEnvironmentKey;
+
+            return {
+              terminalStateByThreadKey: nextTerminalStateByThreadKey,
+              pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey,
+            };
+          }),
+        closePinnedTerminal: (logicalProjectKey, environmentId, terminalId) =>
+          set((state) => {
+            const drawerKey = pinnedTerminalDrawerKey(logicalProjectKey, environmentId);
+            const pinnedState = state.pinnedTerminalDrawerByProjectEnvironmentKey[drawerKey];
+            if (!pinnedState) return state;
+
+            const normalized = normalizePinnedTerminalDrawerState(pinnedState);
+            if (!normalized.terminalIds.includes(terminalId)) return state;
+
+            if (normalized.terminalIds.length <= 1) {
+              const { [drawerKey]: _removed, ...nextPinnedDrawerByKey } =
+                state.pinnedTerminalDrawerByProjectEnvironmentKey;
+              return { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+            }
+
+            const nextThreadState = closeThreadTerminal(normalized, terminalId);
+            const nextPinnedState: PinnedTerminalDrawerState = {
+              ...nextThreadState,
+              pinnedSessionThreadId: normalized.pinnedSessionThreadId,
+            };
+            return {
+              pinnedTerminalDrawerByProjectEnvironmentKey: {
+                ...state.pinnedTerminalDrawerByProjectEnvironmentKey,
+                [drawerKey]: nextPinnedState,
+              },
+            };
+          }),
+        splitPinnedTerminal: (
+          logicalProjectKey,
+          environmentId,
+          terminalId,
+          orientation = "vertical",
+          anchorTerminalId,
+        ) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              (current) => splitThreadTerminal(current, terminalId, orientation, anchorTerminalId),
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        newPinnedTerminal: (logicalProjectKey, environmentId, terminalId) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              (current) => newThreadTerminal(current, terminalId),
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        setActivePinnedTerminal: (logicalProjectKey, environmentId, terminalId) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              (current) => setThreadActiveTerminal(current, terminalId),
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        togglePinnedTerminalPlacement: (logicalProjectKey, environmentId) =>
+          set((state) => {
+            const nextPinnedDrawerByKey = updatePinnedTerminalDrawerStateByKey(
+              state.pinnedTerminalDrawerByProjectEnvironmentKey,
+              logicalProjectKey,
+              environmentId,
+              toggleThreadTerminalPlacement,
+            );
+            return nextPinnedDrawerByKey === state.pinnedTerminalDrawerByProjectEnvironmentKey
+              ? state
+              : { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
+          }),
+        removePinnedTerminalDrawersByEnvironment: (environmentId) =>
+          set((state) => {
+            const next = Object.fromEntries(
+              Object.entries(state.pinnedTerminalDrawerByProjectEnvironmentKey).filter(
+                ([key]) => !key.endsWith(`\0${environmentId}`),
+              ),
+            );
+            if (
+              Object.keys(next).length ===
+              Object.keys(state.pinnedTerminalDrawerByProjectEnvironmentKey).length
+            ) {
+              return state;
+            }
+            return { pinnedTerminalDrawerByProjectEnvironmentKey: next };
+          }),
       };
     },
     {
       name: TERMINAL_STATE_STORAGE_KEY,
-      version: 2,
+      version: 4,
       storage: createJSONStorage(createTerminalStateStorage),
       migrate: migratePersistedTerminalStateStoreState,
       partialize: (state) => ({
         terminalStateByThreadKey: state.terminalStateByThreadKey,
+        terminalDimensionsByLogicalProjectKey: state.terminalDimensionsByLogicalProjectKey,
+        pinnedTerminalDrawerByProjectEnvironmentKey:
+          state.pinnedTerminalDrawerByProjectEnvironmentKey,
       }),
     },
   ),

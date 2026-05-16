@@ -13,6 +13,14 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
+export const TerminalViewMode = Schema.Literals(["sidebar", "tabs"]);
+export type TerminalViewMode = typeof TerminalViewMode.Type;
+export const DEFAULT_TERMINAL_VIEW_MODE: TerminalViewMode = "sidebar";
+
+export const TerminalPlacement = Schema.Literals(["bottom", "right"]);
+export type TerminalPlacement = typeof TerminalPlacement.Type;
+export const DEFAULT_TERMINAL_PLACEMENT: TerminalPlacement = "bottom";
+
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
@@ -93,6 +101,12 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   terminalFontFamily: TrimmedString.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_FONT_FAMILY)),
+  ),
+  defaultTerminalPlacement: TerminalPlacement.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_PLACEMENT)),
+  ),
+  terminalViewMode: TerminalViewMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_VIEW_MODE)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -513,6 +527,8 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  defaultTerminalPlacement: Schema.optionalKey(TerminalPlacement),
+  terminalViewMode: Schema.optionalKey(TerminalViewMode),
   timestampFormat: Schema.optionalKey(TimestampFormat),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

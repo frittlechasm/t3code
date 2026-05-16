@@ -641,6 +641,8 @@ describe("wsApi", () => {
       sidebarThreadSortOrder: "created_at" as const,
       sidebarThreadPreviewCount: 6,
       terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+      defaultTerminalPlacement: "bottom" as const,
+      terminalViewMode: "sidebar" as const,
       timestampFormat: "24-hour" as const,
     };
     const getClientSettings = vi.fn().mockResolvedValue({
@@ -705,6 +707,8 @@ describe("wsApi", () => {
       sidebarThreadSortOrder: "created_at" as const,
       sidebarThreadPreviewCount: 6,
       terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+      defaultTerminalPlacement: "bottom" as const,
+      terminalViewMode: "sidebar" as const,
       timestampFormat: "24-hour" as const,
     };
 

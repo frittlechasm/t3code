@@ -20,13 +20,23 @@ import {
   isTerminalCloseShortcut,
   isTerminalNewShortcut,
   isTerminalSplitShortcut,
+  isTerminalTabNextShortcut,
+  isTerminalTabPreviousShortcut,
+  isTerminalTogglePlacementShortcut,
   isTerminalToggleShortcut,
+  isNativeTerminalNewTabShortcut,
+  nativeTerminalTabTraversalDirection,
+  resolveTerminalShortcutAction,
+  resolveTerminalTabJumpIndex,
   resolveShortcutCommand,
   shouldShowModelPickerJumpHints,
   shouldShowThreadJumpHints,
   shortcutLabelForCommand,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
+  terminalShortcutActionFromCommand,
+  terminalTabJumpCommandForIndex,
+  terminalTabJumpIndexFromCommand,
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
   threadTraversalDirectionFromCommand,
@@ -87,6 +97,7 @@ function compile(bindings: TestBinding[]): ResolvedKeybindingsConfig {
 
 const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("j"), command: "terminal.toggle" },
+  { shortcut: modShortcut("j", { shiftKey: true }), command: "terminal.togglePlacement" },
   {
     shortcut: modShortcut("d"),
     command: "terminal.split",
@@ -94,6 +105,11 @@ const DEFAULT_BINDINGS = compile([
   },
   {
     shortcut: modShortcut("d", { shiftKey: true }),
+    command: "terminal.splitHorizontal",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("t"),
     command: "terminal.new",
     whenAst: whenIdentifier("terminalFocus"),
   },
@@ -131,6 +147,21 @@ const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
   { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
   { shortcut: modShortcut("]", { shiftKey: true }), command: "thread.next" },
+  {
+    shortcut: modShortcut("["),
+    command: "terminal.tabPrevious",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("]"),
+    command: "terminal.tabNext",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("p", { shiftKey: true }),
+    command: "terminal.pinDrawer",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
   { shortcut: modShortcut("1"), command: "thread.jump.1" },
   { shortcut: modShortcut("2"), command: "thread.jump.2" },
   { shortcut: modShortcut("3"), command: "thread.jump.3" },
@@ -148,6 +179,21 @@ const DEFAULT_BINDINGS = compile([
     shortcut: modShortcut("3"),
     command: "modelPicker.jump.3",
     whenAst: whenIdentifier("modelPickerOpen"),
+  },
+  {
+    shortcut: modShortcut("1"),
+    command: "terminal.tab.1",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("2"),
+    command: "terminal.tab.2",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("3"),
+    command: "terminal.tab.3",
+    whenAst: whenIdentifier("terminalFocus"),
   },
 ]);
 
@@ -184,6 +230,31 @@ describe("isTerminalToggleShortcut", () => {
   });
 });
 
+describe("isTerminalTogglePlacementShortcut", () => {
+  it("matches Mod+Shift+J without requiring the terminal to be open", () => {
+    assert.isTrue(
+      isTerminalTogglePlacementShortcut(
+        event({ key: "j", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalOpen: false, terminalFocus: false },
+        },
+      ),
+    );
+    assert.isTrue(
+      isTerminalTogglePlacementShortcut(
+        event({ key: "j", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+          context: { terminalOpen: false, terminalFocus: true },
+        },
+      ),
+    );
+  });
+});
+
 describe("split/new/close terminal shortcuts", () => {
   it("requires terminalFocus for default split/new/close bindings", () => {
     assert.isFalse(
@@ -213,9 +284,20 @@ describe("split/new/close terminal shortcuts", () => {
         context: { terminalFocus: true },
       }),
     );
+    assert.strictEqual(
+      resolveTerminalShortcutAction(
+        event({ key: "d", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+          context: { terminalFocus: true },
+        },
+      ),
+      "splitHorizontal",
+    );
     assert.isTrue(
-      isTerminalNewShortcut(event({ key: "d", ctrlKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
-        platform: "Linux",
+      isTerminalNewShortcut(event({ key: "t", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
         context: { terminalFocus: true },
       }),
     );
@@ -280,6 +362,113 @@ describe("split/new/close terminal shortcuts", () => {
   });
 });
 
+describe("terminal tab shortcuts", () => {
+  it("recognizes native new-tab shortcuts even without configured keybindings", () => {
+    assert.isTrue(isNativeTerminalNewTabShortcut(event({ key: "t", metaKey: true }), "MacIntel"));
+    assert.isTrue(isNativeTerminalNewTabShortcut(event({ key: "t", ctrlKey: true }), "Linux"));
+    assert.isFalse(
+      isNativeTerminalNewTabShortcut(
+        event({ key: "t", metaKey: true, shiftKey: true }),
+        "MacIntel",
+      ),
+    );
+  });
+
+  it("recognizes native tab traversal shortcuts even without configured keybindings", () => {
+    assert.strictEqual(
+      nativeTerminalTabTraversalDirection(
+        event({ key: "[", code: "BracketLeft", metaKey: true }),
+        "MacIntel",
+      ),
+      "previous",
+    );
+    assert.strictEqual(
+      nativeTerminalTabTraversalDirection(
+        event({ key: "]", code: "BracketRight", ctrlKey: true }),
+        "Linux",
+      ),
+      "next",
+    );
+    assert.isNull(
+      nativeTerminalTabTraversalDirection(
+        event({ key: "{", code: "BracketLeft", metaKey: true, shiftKey: true }),
+        "MacIntel",
+      ),
+    );
+  });
+
+  it("uses Cmd+[ and Cmd+] on macOS while the terminal is focused", () => {
+    assert.isTrue(
+      isTerminalTabPreviousShortcut(
+        event({ key: "[", code: "BracketLeft", metaKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: true },
+        },
+      ),
+    );
+    assert.isTrue(
+      isTerminalTabNextShortcut(
+        event({ key: "]", code: "BracketRight", metaKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: true },
+        },
+      ),
+    );
+  });
+
+  it("uses Ctrl+[ and Ctrl+] on non-macOS while the terminal is focused", () => {
+    assert.isTrue(
+      isTerminalTabPreviousShortcut(
+        event({ key: "[", code: "BracketLeft", ctrlKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+          context: { terminalFocus: true },
+        },
+      ),
+    );
+    assert.isTrue(
+      isTerminalTabNextShortcut(
+        event({ key: "]", code: "BracketRight", ctrlKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "Linux",
+          context: { terminalFocus: true },
+        },
+      ),
+    );
+  });
+
+  it("lets thread traversal keep the same shortcuts outside terminal focus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "{", code: "BracketLeft", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: false },
+        },
+      ),
+      "thread.previous",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "}", code: "BracketRight", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: false },
+        },
+      ),
+      "thread.next",
+    );
+  });
+});
+
 describe("shortcutLabelForCommand", () => {
   it("returns the effective binding label", () => {
     const bindings = compile([
@@ -321,6 +510,31 @@ describe("shortcutLabelForCommand", () => {
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.jump.3", "MacIntel"),
       "⌘3",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.togglePlacement", "MacIntel"),
+      "⇧⌘J",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.splitHorizontal", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⇧⌘D",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.pinDrawer", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⇧⌘P",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.pinDrawer", {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "Ctrl+Shift+P",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.previous", "Linux"),
@@ -677,6 +891,57 @@ describe("formatShortcutLabel", () => {
   });
 });
 
+describe("terminalShortcutActionFromCommand", () => {
+  it("maps terminal.togglePlacement to a placement-only action", () => {
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.togglePlacement"),
+      "togglePlacement",
+    );
+  });
+
+  it("maps terminal.splitHorizontal to a horizontal split action", () => {
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.splitHorizontal"),
+      "splitHorizontal",
+    );
+  });
+
+  it("maps terminal.pinDrawer to the pinDrawer action", () => {
+    assert.strictEqual(terminalShortcutActionFromCommand("terminal.pinDrawer"), "pinDrawer");
+  });
+});
+
+describe("pin drawer shortcut", () => {
+  it("resolves Mod+Shift+P to pinDrawer when terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveTerminalShortcutAction(
+        event({ key: "p", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+      "pinDrawer",
+    );
+    assert.strictEqual(
+      resolveTerminalShortcutAction(
+        event({ key: "p", ctrlKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "Linux", context: { terminalFocus: true } },
+      ),
+      "pinDrawer",
+    );
+  });
+
+  it("does not resolve pin drawer when terminalFocus is false", () => {
+    assert.isNull(
+      resolveTerminalShortcutAction(
+        event({ key: "p", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+    );
+  });
+});
+
 describe("isTerminalClearShortcut", () => {
   it("matches Ctrl+L on all platforms", () => {
     assert.isTrue(isTerminalClearShortcut(event({ key: "l", ctrlKey: true }), "Linux"));
@@ -791,6 +1056,78 @@ describe("plus key parsing", () => {
       isTerminalToggleShortcut(event({ key: "+", ctrlKey: true }), plusBindings, {
         platform: "Linux",
       }),
+    );
+  });
+});
+
+describe("terminal tab jump shortcuts", () => {
+  it("maps terminal.tab.N commands to 0-based indices", () => {
+    assert.strictEqual(terminalTabJumpCommandForIndex(0), "terminal.tab.1");
+    assert.strictEqual(terminalTabJumpCommandForIndex(8), "terminal.tab.9");
+    assert.isNull(terminalTabJumpCommandForIndex(9));
+    assert.strictEqual(terminalTabJumpIndexFromCommand("terminal.tab.1"), 0);
+    assert.strictEqual(terminalTabJumpIndexFromCommand("terminal.tab.9"), 8);
+    assert.isNull(terminalTabJumpIndexFromCommand("thread.jump.1"));
+    assert.isNull(terminalTabJumpIndexFromCommand("terminal.tabNext"));
+  });
+
+  it("resolves Mod+1 to tab jump index 0 when terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveTerminalTabJumpIndex(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      0,
+    );
+    assert.strictEqual(
+      resolveTerminalTabJumpIndex(event({ key: "3", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      2,
+    );
+  });
+
+  it("returns null when terminalFocus is false", () => {
+    assert.isNull(
+      resolveTerminalTabJumpIndex(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+    );
+  });
+
+  it("Mod+1 resolves to terminal.tab.1 (not thread.jump.1) when terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "terminal.tab.1",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "thread.jump.1",
+    );
+  });
+
+  it("shortcutLabelForCommand returns the correct label for terminal.tab.1", () => {
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.tab.1", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⌘1",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.tab.1", {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "Ctrl+1",
     );
   });
 });

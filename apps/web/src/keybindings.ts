@@ -3,9 +3,11 @@ import {
   type KeybindingShortcut,
   type KeybindingWhenNode,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
-  type ResolvedKeybindingsConfig,
-  THREAD_JUMP_KEYBINDING_COMMANDS,
   type ModelPickerJumpKeybindingCommand,
+  type ResolvedKeybindingsConfig,
+  TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS,
+  type TerminalTabJumpKeybindingCommand,
+  THREAD_JUMP_KEYBINDING_COMMANDS,
   type ThreadJumpKeybindingCommand,
 } from "@t3tools/contracts";
 import { isMacPlatform } from "./lib/utils";
@@ -41,6 +43,23 @@ interface ShortcutMatchOptions {
 interface ResolvedShortcutLabelOptions extends ShortcutMatchOptions {
   platform?: string;
 }
+
+interface EffectiveShortcutLookup {
+  readonly commandByShortcutKey: ReadonlyMap<string, KeybindingCommand>;
+  readonly shortcutByCommand: ReadonlyMap<KeybindingCommand, KeybindingShortcut>;
+}
+
+export type TerminalShortcutAction =
+  | "toggle"
+  | "togglePlacement"
+  | "split"
+  | "splitHorizontal"
+  | "new"
+  | "close"
+  | "tabPrevious"
+  | "tabNext"
+  | "splitFocusNext"
+  | "pinDrawer";
 
 const TERMINAL_WORD_BACKWARD = "\u001bb";
 const TERMINAL_WORD_FORWARD = "\u001bf";
@@ -95,15 +114,6 @@ function matchesShortcutModifiers(
   );
 }
 
-function matchesShortcut(
-  event: ShortcutEventLike,
-  shortcut: KeybindingShortcut,
-  platform = navigator.platform,
-): boolean {
-  if (!matchesShortcutModifiers(event, shortcut, platform)) return false;
-  return resolveEventKeys(event).has(shortcut.key);
-}
-
 function resolvePlatform(options: ShortcutMatchOptions | undefined): string {
   return options?.platform ?? navigator.platform;
 }
@@ -144,23 +154,66 @@ function shortcutConflictKey(shortcut: KeybindingShortcut, platform = navigator.
   const metaKey = shortcut.metaKey || (shortcut.modKey && useMetaForMod);
   const ctrlKey = shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod);
 
+  return shortcutLookupKey({
+    key: shortcut.key,
+    metaKey,
+    ctrlKey,
+    shiftKey: shortcut.shiftKey,
+    altKey: shortcut.altKey,
+  });
+}
+
+function shortcutLookupKey(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): string {
   return [
-    shortcut.key,
-    metaKey ? "meta" : "",
-    ctrlKey ? "ctrl" : "",
-    shortcut.shiftKey ? "shift" : "",
-    shortcut.altKey ? "alt" : "",
+    input.key,
+    input.metaKey ? "meta" : "",
+    input.ctrlKey ? "ctrl" : "",
+    input.shiftKey ? "shift" : "",
+    input.altKey ? "alt" : "",
   ].join("|");
 }
 
-function findEffectiveShortcutForCommand(
+function eventShortcutLookupKeys(event: ShortcutEventLike): string[] {
+  return [...resolveEventKeys(event)].map((key) =>
+    shortcutLookupKey({
+      key,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+    }),
+  );
+}
+
+const effectiveShortcutLookupCache = new WeakMap<
+  ResolvedKeybindingsConfig,
+  Map<string, EffectiveShortcutLookup>
+>();
+
+function contextCacheKey(context: ShortcutMatchContext): string {
+  return Object.keys(context)
+    .toSorted()
+    .map((key) => `${key}:${context[key] ? "1" : "0"}`)
+    .join(",");
+}
+
+function effectiveShortcutLookupCacheKey(platform: string, context: ShortcutMatchContext): string {
+  return `${isMacPlatform(platform) ? "mac" : "nonmac"}\u0000${contextCacheKey(context)}`;
+}
+
+function compileEffectiveShortcutLookup(
   keybindings: ResolvedKeybindingsConfig,
-  command: KeybindingCommand,
-  options?: ShortcutMatchOptions,
-): KeybindingShortcut | null {
-  const platform = resolvePlatform(options);
-  const context = resolveContext(options);
-  const claimedShortcuts = new Set<string>();
+  platform: string,
+  context: ShortcutMatchContext,
+): EffectiveShortcutLookup {
+  const commandByShortcutKey = new Map<string, KeybindingCommand>();
+  const shortcutByCommand = new Map<KeybindingCommand, KeybindingShortcut>();
 
   for (let index = keybindings.length - 1; index >= 0; index -= 1) {
     const binding = keybindings[index];
@@ -168,17 +221,46 @@ function findEffectiveShortcutForCommand(
     if (!matchesWhenClause(binding.whenAst, context)) continue;
 
     const conflictKey = shortcutConflictKey(binding.shortcut, platform);
-    if (claimedShortcuts.has(conflictKey)) {
+    if (commandByShortcutKey.has(conflictKey)) {
       continue;
     }
 
-    claimedShortcuts.add(conflictKey);
-    if (binding.command === command) {
-      return binding.shortcut;
+    commandByShortcutKey.set(conflictKey, binding.command);
+    if (!shortcutByCommand.has(binding.command)) {
+      shortcutByCommand.set(binding.command, binding.shortcut);
     }
   }
 
-  return null;
+  return { commandByShortcutKey, shortcutByCommand };
+}
+
+function getEffectiveShortcutLookup(
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): EffectiveShortcutLookup {
+  const platform = resolvePlatform(options);
+  const context = resolveContext(options);
+  const cacheKey = effectiveShortcutLookupCacheKey(platform, context);
+  let platformCache = effectiveShortcutLookupCache.get(keybindings);
+  if (!platformCache) {
+    platformCache = new Map();
+    effectiveShortcutLookupCache.set(keybindings, platformCache);
+  }
+
+  const cached = platformCache.get(cacheKey);
+  if (cached) return cached;
+
+  const lookup = compileEffectiveShortcutLookup(keybindings, platform, context);
+  platformCache.set(cacheKey, lookup);
+  return lookup;
+}
+
+function findEffectiveShortcutForCommand(
+  keybindings: ResolvedKeybindingsConfig,
+  command: KeybindingCommand,
+  options?: ShortcutMatchOptions,
+): KeybindingShortcut | null {
+  return getEffectiveShortcutLookup(keybindings, options).shortcutByCommand.get(command) ?? null;
 }
 
 function matchesCommandShortcut(
@@ -195,15 +277,11 @@ export function resolveShortcutCommand(
   keybindings: ResolvedKeybindingsConfig,
   options?: ShortcutMatchOptions,
 ): KeybindingCommand | null {
-  const platform = resolvePlatform(options);
-  const context = resolveContext(options);
+  const lookup = getEffectiveShortcutLookup(keybindings, options);
 
-  for (let index = keybindings.length - 1; index >= 0; index -= 1) {
-    const binding = keybindings[index];
-    if (!binding) continue;
-    if (!matchesWhenClause(binding.whenAst, context)) continue;
-    if (!matchesShortcut(event, binding.shortcut, platform)) continue;
-    return binding.command;
+  for (const lookupKey of eventShortcutLookupKeys(event)) {
+    const command = lookup.commandByShortcutKey.get(lookupKey);
+    if (command) return command;
   }
   return null;
 }
@@ -313,6 +391,28 @@ export function modelPickerJumpIndexFromCommand(command: string): number | null 
   return index === -1 ? null : index;
 }
 
+export function terminalTabJumpCommandForIndex(
+  index: number,
+): TerminalTabJumpKeybindingCommand | null {
+  return TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS[index] ?? null;
+}
+
+export function terminalTabJumpIndexFromCommand(command: string): number | null {
+  const index = TERMINAL_TAB_JUMP_KEYBINDING_COMMANDS.indexOf(
+    command as TerminalTabJumpKeybindingCommand,
+  );
+  return index === -1 ? null : index;
+}
+
+export function resolveTerminalTabJumpIndex(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): number | null {
+  const command = resolveShortcutCommand(event, keybindings, options);
+  return command ? terminalTabJumpIndexFromCommand(command) : null;
+}
+
 export function shouldShowModelPickerJumpHints(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
@@ -347,6 +447,14 @@ export function isTerminalToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "terminal.toggle", options);
 }
 
+export function isTerminalTogglePlacementShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "terminal.togglePlacement", options);
+}
+
 export function isTerminalSplitShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
@@ -369,6 +477,22 @@ export function isTerminalCloseShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return matchesCommandShortcut(event, keybindings, "terminal.close", options);
+}
+
+export function isTerminalTabPreviousShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "terminal.tabPrevious", options);
+}
+
+export function isTerminalTabNextShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "terminal.tabNext", options);
 }
 
 export function isDiffToggleShortcut(
@@ -458,6 +582,35 @@ export function isOpenFavoriteEditorShortcut(
   return matchesCommandShortcut(event, keybindings, "editor.openFavorite", options);
 }
 
+export function terminalShortcutActionFromCommand(
+  command: string | null,
+): TerminalShortcutAction | null {
+  switch (command) {
+    case "terminal.toggle":
+      return "toggle";
+    case "terminal.togglePlacement":
+      return "togglePlacement";
+    case "terminal.split":
+      return "split";
+    case "terminal.splitHorizontal":
+      return "splitHorizontal";
+    case "terminal.new":
+      return "new";
+    case "terminal.close":
+      return "close";
+    case "terminal.tabPrevious":
+      return "tabPrevious";
+    case "terminal.tabNext":
+      return "tabNext";
+    case "terminal.splitFocusNext":
+      return "splitFocusNext";
+    case "terminal.pinDrawer":
+      return "pinDrawer";
+    default:
+      return null;
+  }
+}
+
 export function isTerminalClearShortcut(
   event: ShortcutEventLike,
   platform = navigator.platform,
@@ -479,6 +632,72 @@ export function isTerminalClearShortcut(
     !event.ctrlKey &&
     !event.altKey &&
     !event.shiftKey
+  );
+}
+
+export function isNativeTerminalNewTabShortcut(
+  event: ShortcutEventLike,
+  platform = navigator.platform,
+): boolean {
+  if (event.type !== undefined && event.type !== "keydown") {
+    return false;
+  }
+
+  const key = normalizeEventKey(event.key);
+  const useMeta = isMacPlatform(platform);
+  return (
+    key === "t" &&
+    event.metaKey === useMeta &&
+    event.ctrlKey === !useMeta &&
+    !event.altKey &&
+    !event.shiftKey
+  );
+}
+
+export function nativeTerminalTabTraversalDirection(
+  event: ShortcutEventLike,
+  platform = navigator.platform,
+): "previous" | "next" | null {
+  if (event.type !== undefined && event.type !== "keydown") {
+    return null;
+  }
+
+  const keys = resolveEventKeys(event);
+  const useMeta = isMacPlatform(platform);
+  if (event.metaKey !== useMeta || event.ctrlKey !== !useMeta || event.shiftKey || event.altKey) {
+    return null;
+  }
+
+  if (keys.has("[")) return "previous";
+  if (keys.has("]")) return "next";
+  return null;
+}
+
+export function nativeTerminalShortcutAction(
+  event: ShortcutEventLike,
+  platform = navigator.platform,
+): TerminalShortcutAction | null {
+  if (isNativeTerminalNewTabShortcut(event, platform)) return "new";
+  const direction = nativeTerminalTabTraversalDirection(event, platform);
+  if (direction === "previous") return "tabPrevious";
+  if (direction === "next") return "tabNext";
+  return null;
+}
+
+export function resolveTerminalShortcutAction(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): TerminalShortcutAction | null {
+  const platform = resolvePlatform(options);
+  const context = resolveContext(options);
+  if (context.terminalFocus) {
+    const nativeAction = nativeTerminalShortcutAction(event, platform);
+    if (nativeAction !== null) return nativeAction;
+  }
+
+  return terminalShortcutActionFromCommand(
+    resolveShortcutCommand(event, keybindings, { platform, context }),
   );
 }
 

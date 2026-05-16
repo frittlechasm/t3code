@@ -3,7 +3,13 @@ import { ThreadId, type TerminalEvent } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  isPinnedSessionThreadId,
   migratePersistedTerminalStateStoreState,
+  pinnedSessionThreadId,
+  type PinnedTerminalDrawerState,
+  selectActiveTerminalDrawerState,
+  selectLogicalProjectTerminalDimensions,
+  selectPinnedTerminalDrawerState,
   selectTerminalEventEntries,
   selectThreadTerminalState,
   useTerminalStateStore,
@@ -12,6 +18,16 @@ import {
 const THREAD_ID = ThreadId.make("thread-1");
 const THREAD_REF = scopeThreadRef("environment-a" as never, THREAD_ID);
 const OTHER_THREAD_REF = scopeThreadRef("environment-b" as never, THREAD_ID);
+const LOGICAL_PROJECT_KEY = "repo:owner/project";
+const OTHER_LOGICAL_PROJECT_KEY = "repo:owner/project:other";
+
+function flatSplitLayout(orientation: "vertical" | "horizontal", terminalIds: string[]) {
+  return {
+    type: "split" as const,
+    orientation,
+    children: terminalIds.map((terminalId) => ({ type: "terminal" as const, terminalId })),
+  };
+}
 
 function makeTerminalEvent(
   type: TerminalEvent["type"],
@@ -61,6 +77,8 @@ describe("terminalStateStore actions", () => {
     useTerminalStateStore.persist.clearStorage();
     useTerminalStateStore.setState({
       terminalStateByThreadKey: {},
+      terminalDimensionsByLogicalProjectKey: {},
+      pinnedTerminalDrawerByProjectEnvironmentKey: {},
       terminalLaunchContextByThreadKey: {},
       terminalEventEntriesByKey: {},
       nextTerminalEventId: 1,
@@ -74,13 +92,26 @@ describe("terminalStateStore actions", () => {
     );
     expect(terminalState).toEqual({
       terminalOpen: false,
-      terminalHeight: 280,
+      terminalPlacement: "bottom",
       terminalIds: ["default"],
       runningTerminalIds: [],
       activeTerminalId: "default",
       terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
       activeTerminalGroupId: "group-default",
     });
+  });
+
+  it("seeds unknown thread placement from the default terminal placement", () => {
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+      "right",
+    );
+
+    expect(terminalState.terminalPlacement).toBe("right");
+    expect(
+      useTerminalStateStore.getState().terminalStateByThreadKey[scopedThreadKey(THREAD_REF)],
+    ).toBeUndefined();
   });
 
   it("opens and splits terminals into the active group", () => {
@@ -96,7 +127,38 @@ describe("terminalStateStore actions", () => {
     expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
     expect(terminalState.activeTerminalId).toBe("terminal-2");
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
+    ]);
+  });
+
+  it("normalizes legacy split groups without orientation to vertical", () => {
+    const terminalState = selectThreadTerminalState(
+      {
+        [scopedThreadKey(THREAD_REF)]: {
+          terminalOpen: true,
+          terminalPlacement: "bottom",
+          terminalIds: ["default", "terminal-2"],
+          runningTerminalIds: [],
+          activeTerminalId: "terminal-2",
+          terminalGroups: [{ id: "group-default", terminalIds: ["default", "terminal-2"] }],
+          activeTerminalGroupId: "group-default",
+        },
+      },
+      THREAD_REF,
+    );
+
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
     ]);
   });
 
@@ -118,7 +180,84 @@ describe("terminalStateStore actions", () => {
       "terminal-4",
     ]);
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2", "terminal-3", "terminal-4"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2", "terminal-3", "terminal-4"],
+        splitOrientation: "vertical",
+        splitLayout: {
+          type: "split",
+          orientation: "vertical",
+          children: [
+            { type: "terminal", terminalId: "default" },
+            {
+              type: "split",
+              orientation: "vertical",
+              children: [
+                { type: "terminal", terminalId: "terminal-2" },
+                {
+                  type: "split",
+                  orientation: "vertical",
+                  children: [
+                    { type: "terminal", terminalId: "terminal-3" },
+                    { type: "terminal", terminalId: "terminal-4" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("uses the requested orientation for the first split in a group", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2", "horizontal");
+
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "horizontal",
+        splitLayout: flatSplitLayout("horizontal", ["default", "terminal-2"]),
+      },
+    ]);
+  });
+
+  it("nests later split shortcuts under the focused terminal", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2", "horizontal");
+    store.splitTerminal(THREAD_REF, "terminal-3", "vertical", "default");
+
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-3", "terminal-2"],
+        splitOrientation: "horizontal",
+        splitLayout: {
+          type: "split",
+          orientation: "horizontal",
+          children: [
+            {
+              type: "split",
+              orientation: "vertical",
+              children: [
+                { type: "terminal", terminalId: "default" },
+                { type: "terminal", terminalId: "terminal-3" },
+              ],
+            },
+            { type: "terminal", terminalId: "terminal-2" },
+          ],
+        },
+      },
     ]);
   });
 
@@ -135,6 +274,28 @@ describe("terminalStateStore actions", () => {
     expect(terminalState.terminalGroups).toEqual([
       { id: "group-default", terminalIds: ["default"] },
       { id: "group-terminal-2", terminalIds: ["terminal-2"] },
+    ]);
+  });
+
+  it("creates a new terminal group after splitting the active terminal group", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.newTerminal(THREAD_REF, "terminal-3");
+
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.activeTerminalId).toBe("terminal-3");
+    expect(terminalState.activeTerminalGroupId).toBe("group-terminal-3");
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
+      { id: "group-terminal-3", terminalIds: ["terminal-3"] },
     ]);
   });
 
@@ -180,6 +341,7 @@ describe("terminalStateStore actions", () => {
         terminalStateByThreadKey: {
           [scopedThreadKey(THREAD_REF)]: {
             terminalOpen: true,
+            terminalPlacement: "right",
             terminalHeight: 320,
             terminalIds: ["default"],
             runningTerminalIds: [],
@@ -189,6 +351,7 @@ describe("terminalStateStore actions", () => {
           },
           "legacy-thread-id": {
             terminalOpen: true,
+            terminalPlacement: "right",
             terminalHeight: 320,
             terminalIds: ["default"],
             runningTerminalIds: [],
@@ -205,6 +368,7 @@ describe("terminalStateStore actions", () => {
       terminalStateByThreadKey: {
         [scopedThreadKey(THREAD_REF)]: {
           terminalOpen: true,
+          terminalPlacement: "right",
           terminalHeight: 320,
           terminalIds: ["default"],
           runningTerminalIds: [],
@@ -213,7 +377,160 @@ describe("terminalStateStore actions", () => {
           activeTerminalGroupId: "group-default",
         },
       },
+      terminalDimensionsByLogicalProjectKey: {},
+      pinnedTerminalDrawerByProjectEnvironmentKey: {},
     });
+  });
+
+  it("defaults migrated legacy terminal state placement to bottom", () => {
+    const migrated = migratePersistedTerminalStateStoreState(
+      {
+        terminalStateByThreadKey: {
+          [scopedThreadKey(THREAD_REF)]: {
+            terminalOpen: true,
+            terminalHeight: 320,
+            terminalIds: ["default"],
+            runningTerminalIds: [],
+            activeTerminalId: "default",
+            terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+            activeTerminalGroupId: "group-default",
+          },
+        },
+      },
+      2,
+    );
+
+    expect(
+      selectThreadTerminalState(migrated.terminalStateByThreadKey ?? {}, THREAD_REF)
+        .terminalPlacement,
+    ).toBe("bottom");
+  });
+
+  it("returns stable default terminal state snapshots by placement", () => {
+    expect(selectThreadTerminalState({}, THREAD_REF, "bottom")).toBe(
+      selectThreadTerminalState({}, THREAD_REF, "bottom"),
+    );
+    expect(selectThreadTerminalState({}, THREAD_REF, "right")).toBe(
+      selectThreadTerminalState({}, THREAD_REF, "right"),
+    );
+  });
+
+  it("returns a stable normalized snapshot for legacy persisted terminal state", () => {
+    const terminalStateByThreadKey = {
+      [scopedThreadKey(THREAD_REF)]: {
+        terminalOpen: true,
+        terminalHeight: 320,
+        terminalIds: ["default"],
+        runningTerminalIds: [],
+        activeTerminalId: "default",
+        terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+        activeTerminalGroupId: "group-default",
+      },
+    };
+
+    expect(selectThreadTerminalState(terminalStateByThreadKey, THREAD_REF)).toBe(
+      selectThreadTerminalState(terminalStateByThreadKey, THREAD_REF),
+    );
+  });
+
+  it("returns default terminal dimensions for unknown logical projects", () => {
+    const dimensions = selectLogicalProjectTerminalDimensions(
+      useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+      LOGICAL_PROJECT_KEY,
+    );
+
+    expect(dimensions).toEqual({
+      terminalHeight: 280,
+      terminalWidth: 420,
+    });
+  });
+
+  it("persists terminal dimensions by logical project", () => {
+    const store = useTerminalStateStore.getState();
+
+    store.setTerminalHeight(LOGICAL_PROJECT_KEY, 340);
+    store.setTerminalWidth(LOGICAL_PROJECT_KEY, 520);
+
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        LOGICAL_PROJECT_KEY,
+      ),
+    ).toEqual({
+      terminalHeight: 340,
+      terminalWidth: 520,
+    });
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        OTHER_LOGICAL_PROJECT_KEY,
+      ),
+    ).toEqual({
+      terminalHeight: 280,
+      terminalWidth: 420,
+    });
+  });
+
+  it("shares terminal dimensions across equivalent environments with the same logical project", () => {
+    const store = useTerminalStateStore.getState();
+
+    store.setTerminalHeight(LOGICAL_PROJECT_KEY, 360);
+
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        LOGICAL_PROJECT_KEY,
+      ).terminalHeight,
+    ).toBe(360);
+    expect(
+      selectLogicalProjectTerminalDimensions(
+        useTerminalStateStore.getState().terminalDimensionsByLogicalProjectKey,
+        LOGICAL_PROJECT_KEY,
+      ).terminalHeight,
+    ).toBe(360);
+  });
+
+  it("uses legacy thread terminal height as a logical-project fallback", () => {
+    const dimensions = selectLogicalProjectTerminalDimensions({}, LOGICAL_PROJECT_KEY, {
+      terminalStateByThreadKey: {
+        [scopedThreadKey(THREAD_REF)]: {
+          terminalOpen: true,
+          terminalPlacement: "bottom",
+          terminalHeight: 335,
+          terminalIds: ["default"],
+          runningTerminalIds: [],
+          activeTerminalId: "default",
+          terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+          activeTerminalGroupId: "group-default",
+        },
+      },
+      threadRef: THREAD_REF,
+    });
+
+    expect(dimensions).toEqual({
+      terminalHeight: 335,
+      terminalWidth: 420,
+    });
+  });
+
+  it("sets and toggles terminal placement without opening the drawer", () => {
+    const store = useTerminalStateStore.getState();
+
+    store.setTerminalPlacement(THREAD_REF, "right");
+    let terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalPlacement).toBe("right");
+    expect(terminalState.terminalOpen).toBe(false);
+
+    store.toggleTerminalPlacement(THREAD_REF);
+    terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalPlacement).toBe("bottom");
+    expect(terminalState.terminalOpen).toBe(false);
   });
 
   it("tracks and clears terminal subprocess activity", () => {
@@ -264,7 +581,12 @@ describe("terminalStateStore actions", () => {
     expect(terminalState.activeTerminalId).toBe("terminal-2");
     expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
     ]);
   });
 
@@ -391,6 +713,352 @@ describe("terminalStateStore actions", () => {
 
     store.clearTerminalState(THREAD_REF);
 
+    expect(useTerminalStateStore.getState()).toBe(before);
+  });
+});
+
+describe("pinned terminal drawer", () => {
+  beforeEach(() => {
+    useTerminalStateStore.persist.clearStorage();
+    useTerminalStateStore.setState({
+      terminalStateByThreadKey: {},
+      terminalDimensionsByLogicalProjectKey: {},
+      pinnedTerminalDrawerByProjectEnvironmentKey: {},
+      terminalLaunchContextByThreadKey: {},
+      terminalEventEntriesByKey: {},
+      nextTerminalEventId: 1,
+    });
+  });
+
+  it("produces a stable synthetic pinned session thread id", () => {
+    expect(pinnedSessionThreadId("env-1", "repo:owner/project")).toBe(
+      "pinned env-1 repo:owner/project",
+    );
+  });
+
+  it("pin action moves the current thread drawer state to the pinned map", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.splitTerminal(THREAD_REF, "terminal-2");
+
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinned).not.toBeNull();
+    expect(pinned?.terminalOpen).toBe(true);
+    expect(pinned?.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(pinned?.activeTerminalId).toBe("terminal-2");
+    expect(pinned?.pinnedSessionThreadId).toBe(
+      pinnedSessionThreadId(THREAD_REF.environmentId, LOGICAL_PROJECT_KEY),
+    );
+  });
+
+  it("pin action leaves the thread's own state untouched (suspended)", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.splitTerminal(THREAD_REF, "terminal-2");
+
+    const stateBefore = useTerminalStateStore.getState().terminalStateByThreadKey;
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    expect(useTerminalStateStore.getState().terminalStateByThreadKey).toBe(stateBefore);
+  });
+
+  it("unpin action adopts pinned layout into current thread with fresh (empty) running terminals", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.setTerminalActivity(THREAD_REF, "terminal-2", true);
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.unpinTerminalDrawer(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, THREAD_REF);
+
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(threadState.terminalOpen).toBe(true);
+    expect(threadState.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(threadState.runningTerminalIds).toEqual([]);
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinned).toBeNull();
+  });
+
+  it("unpin action targets only the specified thread and leaves other threads suspended", () => {
+    const store = useTerminalStateStore.getState();
+    store.newTerminal(OTHER_THREAD_REF, "env-b-terminal");
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.unpinTerminalDrawer(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, THREAD_REF);
+
+    const otherState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      OTHER_THREAD_REF,
+    );
+    expect(otherState.terminalIds).toEqual(["default", "env-b-terminal"]);
+  });
+
+  it("close-last pinned terminal tears down the pinned drawer entry", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.closePinnedTerminal(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, "default");
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinned).toBeNull();
+  });
+
+  it("closing a non-last pinned terminal updates the pinned drawer without removing it", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.closePinnedTerminal(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, "terminal-2");
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinned).not.toBeNull();
+    expect(pinned?.terminalIds).toEqual(["default"]);
+    expect(pinned?.pinnedSessionThreadId).toBe(
+      pinnedSessionThreadId(THREAD_REF.environmentId, LOGICAL_PROJECT_KEY),
+    );
+  });
+
+  it("splitPinnedTerminal updates only the pinned drawer layout", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.splitPinnedTerminal(
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      "terminal-pinned-2",
+      "horizontal",
+      "default",
+    );
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(pinned?.terminalIds).toEqual(["default", "terminal-pinned-2"]);
+    expect(pinned?.activeTerminalId).toBe("terminal-pinned-2");
+    expect(pinned?.terminalGroups[0]?.splitOrientation).toBe("horizontal");
+    expect(threadState.terminalIds).toEqual(["default"]);
+  });
+
+  it("newPinnedTerminal and setActivePinnedTerminal update pinned tabs without touching thread state", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.newPinnedTerminal(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, "terminal-pinned-tab");
+    store.setActivePinnedTerminal(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId, "default");
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(pinned?.terminalIds).toEqual(["default", "terminal-pinned-tab"]);
+    expect(pinned?.activeTerminalId).toBe("default");
+    expect(threadState.terminalIds).toEqual(["default"]);
+  });
+
+  it("togglePinnedTerminalPlacement changes pinned placement without touching thread placement", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    store.togglePinnedTerminalPlacement(LOGICAL_PROJECT_KEY, THREAD_REF.environmentId);
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    const threadState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(pinned?.terminalPlacement).toBe("right");
+    expect(threadState.terminalPlacement).toBe("bottom");
+  });
+
+  it("normalization recovers a pinned state with an invalid active terminal", () => {
+    useTerminalStateStore.getState().pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    const currentPinned =
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey;
+    const [key, value] = Object.entries(currentPinned)[0]!;
+    useTerminalStateStore.setState({
+      pinnedTerminalDrawerByProjectEnvironmentKey: {
+        [key]: { ...value, activeTerminalId: "nonexistent" },
+      },
+    });
+
+    const pinned = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinned?.activeTerminalId).toBe("default");
+  });
+
+  it("migration from v1/v2/v3 initializes pinnedTerminalDrawerByProjectEnvironmentKey as empty", () => {
+    const migrated = migratePersistedTerminalStateStoreState(
+      {
+        terminalStateByThreadKey: {
+          [scopedThreadKey(THREAD_REF)]: {
+            terminalOpen: true,
+            terminalPlacement: "bottom",
+            terminalIds: ["default"],
+            runningTerminalIds: [],
+            activeTerminalId: "default",
+            terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+            activeTerminalGroupId: "group-default",
+          },
+        },
+      },
+      3,
+    );
+
+    expect(migrated.pinnedTerminalDrawerByProjectEnvironmentKey).toEqual({});
+  });
+
+  it("selectPinnedTerminalDrawerState returns null for unknown project/environment", () => {
+    const result = selectPinnedTerminalDrawerState({}, "unknown-project", THREAD_REF.environmentId);
+    expect(result).toBeNull();
+  });
+
+  it("selectActiveTerminalDrawerState returns pinned state when a pinned drawer exists for the project/environment", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    const { terminalStateByThreadKey, pinnedTerminalDrawerByProjectEnvironmentKey } =
+      useTerminalStateStore.getState();
+    const active = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(active.pinned).toBe(true);
+    expect(active.state.terminalIds).toEqual(["default", "terminal-2"]);
+    expect(active.state.terminalOpen).toBe(true);
+    expect((active.state as PinnedTerminalDrawerState).pinnedSessionThreadId).toBe(
+      pinnedSessionThreadId(THREAD_REF.environmentId, LOGICAL_PROJECT_KEY),
+    );
+  });
+
+  it("selectActiveTerminalDrawerState falls back to thread state when no pinned drawer is active", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "terminal-local");
+
+    const { terminalStateByThreadKey, pinnedTerminalDrawerByProjectEnvironmentKey } =
+      useTerminalStateStore.getState();
+    const active = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(active.pinned).toBe(false);
+    expect(active.state.terminalIds).toContain("terminal-local");
+  });
+
+  it("selectActiveTerminalDrawerState scopes pinned state to the correct project/environment pair", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+
+    const { terminalStateByThreadKey, pinnedTerminalDrawerByProjectEnvironmentKey } =
+      useTerminalStateStore.getState();
+
+    // Different project key — no pinned drawer, falls back to thread state
+    const activeOtherProject = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      OTHER_LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(activeOtherProject.pinned).toBe(false);
+
+    // Matching project key — returns pinned state
+    const activeSameProject = selectActiveTerminalDrawerState(
+      terminalStateByThreadKey,
+      pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+      THREAD_REF,
+    );
+    expect(activeSameProject.pinned).toBe(true);
+  });
+
+  it("isPinnedSessionThreadId returns true for pinned session thread ids", () => {
+    const id = pinnedSessionThreadId(THREAD_REF.environmentId, LOGICAL_PROJECT_KEY);
+    expect(isPinnedSessionThreadId(id)).toBe(true);
+  });
+
+  it("isPinnedSessionThreadId returns false for real thread ids", () => {
+    expect(isPinnedSessionThreadId(String(THREAD_ID))).toBe(false);
+    expect(isPinnedSessionThreadId("")).toBe(false);
+  });
+
+  it("removePinnedTerminalDrawersByEnvironment removes drawers only for the given environment", () => {
+    const store = useTerminalStateStore.getState();
+    store.pinTerminalDrawer(THREAD_REF, LOGICAL_PROJECT_KEY);
+    store.pinTerminalDrawer(OTHER_THREAD_REF, OTHER_LOGICAL_PROJECT_KEY);
+
+    store.removePinnedTerminalDrawersByEnvironment(THREAD_REF.environmentId);
+
+    const pinnedA = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      LOGICAL_PROJECT_KEY,
+      THREAD_REF.environmentId,
+    );
+    expect(pinnedA).toBeNull();
+
+    const pinnedB = selectPinnedTerminalDrawerState(
+      useTerminalStateStore.getState().pinnedTerminalDrawerByProjectEnvironmentKey,
+      OTHER_LOGICAL_PROJECT_KEY,
+      OTHER_THREAD_REF.environmentId,
+    );
+    expect(pinnedB).not.toBeNull();
+  });
+
+  it("removePinnedTerminalDrawersByEnvironment is a no-op when no drawers exist for that environment", () => {
+    const before = useTerminalStateStore.getState();
+    before.removePinnedTerminalDrawersByEnvironment("nonexistent-env");
     expect(useTerminalStateStore.getState()).toBe(before);
   });
 });

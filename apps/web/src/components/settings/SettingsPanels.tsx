@@ -99,6 +99,11 @@ const TIMESTAMP_FORMAT_LABELS = {
   "24-hour": "24-hour",
 } as const;
 
+const TERMINAL_PLACEMENT_LABELS = {
+  bottom: "Bottom",
+  right: "Right",
+} as const;
+
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 
 function withoutProviderInstanceKey<V>(
@@ -427,6 +432,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
+      ...(settings.terminalViewMode !== DEFAULT_UNIFIED_SETTINGS.terminalViewMode
+        ? ["Terminal view mode"]
+        : []),
+      ...(settings.defaultTerminalPlacement !== DEFAULT_UNIFIED_SETTINGS.defaultTerminalPlacement
+        ? ["Default terminal placement"]
+        : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
     ],
     [
@@ -442,6 +453,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableAssistantStreaming,
       settings.sidebarThreadPreviewCount,
       settings.terminalFontFamily,
+      settings.defaultTerminalPlacement,
+      settings.terminalViewMode,
       settings.timestampFormat,
       theme,
     ],
@@ -471,6 +484,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+      defaultTerminalPlacement: DEFAULT_UNIFIED_SETTINGS.defaultTerminalPlacement,
+      terminalViewMode: DEFAULT_UNIFIED_SETTINGS.terminalViewMode,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
     });
     onRestored?.();
@@ -729,6 +744,89 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Open the task panel automatically"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Terminal view"
+          description="Choose how multiple terminals are organized in the drawer."
+          resetAction={
+            settings.terminalViewMode !== DEFAULT_UNIFIED_SETTINGS.terminalViewMode ? (
+              <SettingResetButton
+                label="terminal view"
+                onClick={() =>
+                  updateSettings({
+                    terminalViewMode: DEFAULT_UNIFIED_SETTINGS.terminalViewMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.terminalViewMode}
+              onValueChange={(value) => {
+                if (value === "sidebar" || value === "tabs") {
+                  updateSettings({ terminalViewMode: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Terminal view mode">
+                <SelectValue>
+                  {settings.terminalViewMode === "tabs" ? "Tabs" : "Sidebar"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="sidebar">
+                  Sidebar
+                </SelectItem>
+                <SelectItem hideIndicator value="tabs">
+                  Tabs
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          title="Default terminal placement"
+          description="Choose where terminal drawers open for threads without a saved placement."
+          resetAction={
+            settings.defaultTerminalPlacement !==
+            DEFAULT_UNIFIED_SETTINGS.defaultTerminalPlacement ? (
+              <SettingResetButton
+                label="default terminal placement"
+                onClick={() =>
+                  updateSettings({
+                    defaultTerminalPlacement: DEFAULT_UNIFIED_SETTINGS.defaultTerminalPlacement,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.defaultTerminalPlacement}
+              onValueChange={(value) => {
+                if (value === "bottom" || value === "right") {
+                  updateSettings({ defaultTerminalPlacement: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Default terminal placement">
+                <SelectValue>
+                  {TERMINAL_PLACEMENT_LABELS[settings.defaultTerminalPlacement]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="bottom">
+                  {TERMINAL_PLACEMENT_LABELS.bottom}
+                </SelectItem>
+                <SelectItem hideIndicator value="right">
+                  {TERMINAL_PLACEMENT_LABELS.right}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

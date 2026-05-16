@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ClientSettingsPatch,
   ClientSettingsSchema,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
@@ -15,6 +16,7 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 
 describe("ClientSettings terminal font", () => {
   it("defaults to the built-in terminal font family", () => {
@@ -28,6 +30,22 @@ describe("ClientSettings terminal font", () => {
         terminalFontFamily: '  "JetBrainsMono Nerd Font Mono", "SF Mono", monospace  ',
       }).terminalFontFamily,
     ).toBe('"JetBrainsMono Nerd Font Mono", "SF Mono", monospace');
+  });
+});
+
+describe("ClientSettings terminal placement", () => {
+  it("defaults legacy settings documents to bottom placement", () => {
+    const decoded = decodeClientSettings({});
+
+    expect(decoded.defaultTerminalPlacement).toBe("bottom");
+    expect(DEFAULT_CLIENT_SETTINGS.defaultTerminalPlacement).toBe("bottom");
+  });
+
+  it("accepts default terminal placement patches", () => {
+    expect(decodeClientSettingsPatch({}).defaultTerminalPlacement).toBeUndefined();
+    expect(decodeClientSettingsPatch({ defaultTerminalPlacement: "right" })).toEqual({
+      defaultTerminalPlacement: "right",
+    });
   });
 });
 

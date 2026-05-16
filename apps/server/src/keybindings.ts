@@ -108,6 +108,13 @@ function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): bool
   );
 }
 
+function resolvedKeybindingRuleIdentity(rule: ResolvedKeybindingRule): string | null {
+  const shortcut = encodeShortcut(rule.shortcut);
+  if (!shortcut) return null;
+  const when = rule.whenAst ? encodeWhenAst(rule.whenAst) : "";
+  return `${rule.command}\u0000${shortcut}\u0000${when}`;
+}
+
 function keybindingShortcutContext(rule: KeybindingRule): string | null {
   const parsed = parseKeybindingShortcut(rule.key);
   if (!parsed) return null;
@@ -228,10 +235,13 @@ function mergeWithDefaultKeybindings(custom: ResolvedKeybindingsConfig): Resolve
     return [...DEFAULT_RESOLVED_KEYBINDINGS];
   }
 
-  const overriddenCommands = new Set(custom.map((binding) => binding.command));
-  const retainedDefaults = DEFAULT_RESOLVED_KEYBINDINGS.filter(
-    (binding) => !overriddenCommands.has(binding.command),
+  const customRuleIdentities = new Set(
+    custom.map(resolvedKeybindingRuleIdentity).filter(Predicate.isNotNull),
   );
+  const retainedDefaults = DEFAULT_RESOLVED_KEYBINDINGS.filter((binding) => {
+    const identity = resolvedKeybindingRuleIdentity(binding);
+    return identity === null || !customRuleIdentities.has(identity);
+  });
   const merged = [...retainedDefaults, ...custom];
 
   if (merged.length <= MAX_KEYBINDINGS_COUNT) {
@@ -520,7 +530,6 @@ const makeKeybindings = Effect.gen(function* () {
         migratedDefaultRules ||= migrated.changed;
         return migrated.rule;
       });
-      const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
         defaultCommand: KeybindingRule["command"];
@@ -529,7 +538,7 @@ const makeKeybindings = Effect.gen(function* () {
         when: string | null;
       }> = [];
       for (const defaultRule of DEFAULT_KEYBINDINGS) {
-        if (existingCommands.has(defaultRule.command)) {
+        if (customConfig.some((entry) => isSameKeybindingRule(entry, defaultRule))) {
           continue;
         }
         const conflictingEntry = customConfig.find((entry) =>
