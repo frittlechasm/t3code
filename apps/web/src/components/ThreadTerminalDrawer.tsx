@@ -2,6 +2,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import {
   PanelBottomIcon,
   PanelRightIcon,
+  Pin,
+  PinOff,
   Plus,
   Rows3Icon,
   SquareSplitHorizontal,
@@ -29,6 +31,16 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import { Button } from "~/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
 import { openInPreferredEditor } from "../editorPreferences";
@@ -910,6 +922,9 @@ interface ThreadTerminalDrawerProps {
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
   placementShortcutLabel?: string | undefined;
+  isPinned?: boolean;
+  onPinDrawer?: () => void;
+  onUnpinDrawer?: () => void;
 }
 
 interface ThreadTerminalDrawerTab {
@@ -1174,6 +1189,9 @@ export default function ThreadTerminalDrawer({
   onAddTerminalContext,
   keybindings,
   placementShortcutLabel,
+  isPinned = false,
+  onPinDrawer,
+  onUnpinDrawer,
 }: ThreadTerminalDrawerProps) {
   const [drawerHeight, setDrawerHeight] = useState(() => clampDrawerHeight(height));
   const [drawerWidth, setDrawerWidth] = useState(() => clampDrawerWidth(width));
@@ -1241,6 +1259,15 @@ export default function ThreadTerminalDrawer({
   const placementActionLabel = placementShortcutLabel
     ? `Move Terminal ${placement === "right" ? "to Bottom" : "to Right"} (${placementShortcutLabel})`
     : `Move Terminal ${placement === "right" ? "to Bottom" : "to Right"}`;
+  const pinActionLabel = isPinned ? "Unpin Drawer" : "Pin Drawer";
+  const isLastTerminalInPinnedDrawer = isPinned && resolvedTerminalIds.length <= 1;
+  type PinDialogKind = "pin" | "unpin" | "closePinned";
+  const [pinDialogKind, setPinDialogKind] = useState<PinDialogKind | null>(null);
+  const onPinButtonClick = useCallback(
+    () => setPinDialogKind(isPinned ? "unpin" : "pin"),
+    [isPinned],
+  );
+  const onCloseDialogs = useCallback(() => setPinDialogKind(null), []);
   const onSplitTerminalAction = useCallback(() => {
     if (hasReachedSplitLimit) return;
     onSplitTerminal("vertical");
@@ -1501,8 +1528,20 @@ export default function ThreadTerminalDrawer({
             </TerminalActionButton>
             <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
+              className={`p-1 transition-colors hover:bg-accent ${isPinned ? "text-primary" : "text-foreground/90"}`}
+              onClick={onPinButtonClick}
+              label={pinActionLabel}
+            >
+              {isPinned ? <PinOff className="size-3.25" /> : <Pin className="size-3.25" />}
+            </TerminalActionButton>
+            <div className="h-4 w-px bg-border/80" />
+            <TerminalActionButton
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={() => onCloseTerminal(resolvedActiveTerminalId)}
+              onClick={() =>
+                isLastTerminalInPinnedDrawer
+                  ? setPinDialogKind("closePinned")
+                  : onCloseTerminal(resolvedActiveTerminalId)
+              }
               label={closeTerminalActionLabel}
             >
               <Trash2 className="size-3.25" />
@@ -1603,8 +1642,19 @@ export default function ThreadTerminalDrawer({
               )}
             </TerminalActionButton>
             <TerminalActionButton
+              className={`p-1 transition-colors hover:bg-accent ${isPinned ? "text-primary" : "text-foreground/90"}`}
+              onClick={onPinButtonClick}
+              label={pinActionLabel}
+            >
+              {isPinned ? <PinOff className="size-3.25" /> : <Pin className="size-3.25" />}
+            </TerminalActionButton>
+            <TerminalActionButton
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={() => onCloseTerminal(resolvedActiveTerminalId)}
+              onClick={() =>
+                isLastTerminalInPinnedDrawer
+                  ? setPinDialogKind("closePinned")
+                  : onCloseTerminal(resolvedActiveTerminalId)
+              }
               label={closeTerminalActionLabel}
             >
               <Trash2 className="size-3.25" />
@@ -1712,8 +1762,19 @@ export default function ThreadTerminalDrawer({
                     )}
                   </TerminalActionButton>
                   <TerminalActionButton
+                    className={`inline-flex h-full items-center border-l border-border/70 px-1 transition-colors hover:bg-accent/70 ${isPinned ? "text-primary" : "text-foreground/90"}`}
+                    onClick={onPinButtonClick}
+                    label={pinActionLabel}
+                  >
+                    {isPinned ? <PinOff className="size-3.25" /> : <Pin className="size-3.25" />}
+                  </TerminalActionButton>
+                  <TerminalActionButton
                     className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                    onClick={() => onCloseTerminal(resolvedActiveTerminalId)}
+                    onClick={() =>
+                      isLastTerminalInPinnedDrawer
+                        ? setPinDialogKind("closePinned")
+                        : onCloseTerminal(resolvedActiveTerminalId)
+                    }
                     label={closeTerminalActionLabel}
                   >
                     <Trash2 className="size-3.25" />
@@ -1815,6 +1876,74 @@ export default function ThreadTerminalDrawer({
           )}
         </div>
       </div>
+
+      <AlertDialog open={pinDialogKind === "pin"} onOpenChange={onCloseDialogs}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Pin drawer for this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Pinning will restart all terminals in this drawer. Running processes will be stopped.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              onClick={() => {
+                onCloseDialogs();
+                onPinDrawer?.();
+              }}
+            >
+              Pin Drawer
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+
+      <AlertDialog open={pinDialogKind === "unpin"} onOpenChange={onCloseDialogs}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unpin drawer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Unpinning will restart all terminals. The current layout will be kept for this thread.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              onClick={() => {
+                onCloseDialogs();
+                onUnpinDrawer?.();
+              }}
+            >
+              Unpin Drawer
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+
+      <AlertDialog open={pinDialogKind === "closePinned"} onOpenChange={onCloseDialogs}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close pinned drawer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This is the last terminal in the pinned drawer. Closing it will unpin the drawer and
+              revert to per-thread terminals.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                onCloseDialogs();
+                onCloseTerminal(resolvedActiveTerminalId);
+              }}
+            >
+              Close Terminal
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </aside>
   );
 }

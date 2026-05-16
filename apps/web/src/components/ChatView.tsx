@@ -98,6 +98,7 @@ import {
   type Thread,
   type TurnDiffSummary,
 } from "../types";
+import { usePinnedTerminalDrawerActions } from "../hooks/usePinnedTerminalDrawerActions";
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useCommandPaletteStore } from "../commandPaletteStore";
@@ -504,7 +505,10 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const sessionThreadRef = useMemo(
     () =>
       activeDrawer.pinned
-        ? scopeThreadRef(threadRef.environmentId, activeDrawer.state.pinnedSessionThreadId as ThreadId)
+        ? scopeThreadRef(
+            threadRef.environmentId,
+            activeDrawer.state.pinnedSessionThreadId as ThreadId,
+          )
         : null,
     [activeDrawer, threadRef.environmentId],
   );
@@ -534,6 +538,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const storeNewTerminal = useTerminalStateStore((state) => state.newTerminal);
   const storeSetActiveTerminal = useTerminalStateStore((state) => state.setActiveTerminal);
   const storeCloseTerminal = useTerminalStateStore((state) => state.closeTerminal);
+  const { pinDrawer, unpinDrawer, closePinnedTerminal } = usePinnedTerminalDrawerActions();
   const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
   const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveWorktreePath = useMemo(() => {
@@ -639,6 +644,18 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
 
   const closeTerminal = useCallback(
     (terminalId: string) => {
+      if (activeDrawer.pinned && logicalProjectKey && sessionThreadRef) {
+        const isLast = terminalState.terminalIds.length <= 1;
+        void closePinnedTerminal(
+          logicalProjectKey,
+          threadRef.environmentId,
+          terminalId,
+          sessionThreadRef.threadId,
+          isLast,
+        );
+        bumpFocusRequestId();
+        return;
+      }
       const api = readEnvironmentApi(threadRef.environmentId);
       if (!api) return;
       const isFinalTerminal = terminalState.terminalIds.length <= 1;
@@ -663,8 +680,28 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       storeCloseTerminal(threadRef, terminalId);
       bumpFocusRequestId();
     },
-    [bumpFocusRequestId, storeCloseTerminal, terminalState.terminalIds.length, threadId, threadRef],
+    [
+      activeDrawer.pinned,
+      bumpFocusRequestId,
+      closePinnedTerminal,
+      logicalProjectKey,
+      sessionThreadRef,
+      storeCloseTerminal,
+      terminalState.terminalIds.length,
+      threadId,
+      threadRef,
+    ],
   );
+
+  const handlePinDrawer = useCallback(() => {
+    if (!logicalProjectKey) return;
+    void pinDrawer(threadRef, logicalProjectKey);
+  }, [logicalProjectKey, pinDrawer, threadRef]);
+
+  const handleUnpinDrawer = useCallback(() => {
+    if (!logicalProjectKey || !sessionThreadRef) return;
+    void unpinDrawer(logicalProjectKey, threadRef.environmentId, sessionThreadRef.threadId, threadRef);
+  }, [logicalProjectKey, sessionThreadRef, threadRef, unpinDrawer]);
 
   const handleAddTerminalContext = useCallback(
     (selection: TerminalContextSelection) => {
@@ -713,6 +750,9 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         onTogglePlacement={toggleTerminalPlacement}
         onAddTerminalContext={handleAddTerminalContext}
         placementShortcutLabel={visible ? placementShortcutLabel : undefined}
+        isPinned={activeDrawer.pinned}
+        onPinDrawer={handlePinDrawer}
+        onUnpinDrawer={handleUnpinDrawer}
       />
     </div>
   );

@@ -879,11 +879,7 @@ describe("pinned terminal drawer", () => {
   });
 
   it("selectPinnedTerminalDrawerState returns null for unknown project/environment", () => {
-    const result = selectPinnedTerminalDrawerState(
-      {},
-      "unknown-project",
-      THREAD_REF.environmentId,
-    );
+    const result = selectPinnedTerminalDrawerState({}, "unknown-project", THREAD_REF.environmentId);
     expect(result).toBeNull();
   });
 });

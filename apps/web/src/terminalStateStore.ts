@@ -875,7 +875,10 @@ function normalizePinnedTerminalDrawerState(
   const cached = NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE.get(state);
   if (cached) return cached;
   const threadState = normalizeThreadTerminalState(state);
-  const result: PinnedTerminalDrawerState = { ...threadState, pinnedSessionThreadId: state.pinnedSessionThreadId };
+  const result: PinnedTerminalDrawerState = {
+    ...threadState,
+    pinnedSessionThreadId: state.pinnedSessionThreadId,
+  };
   NORMALIZED_PINNED_TERMINAL_DRAWER_STATE_BY_SOURCE.set(state, result);
   return result;
 }
@@ -1443,10 +1446,8 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
               () => freshThreadState,
             );
 
-            const {
-              [drawerKey]: _removed,
-              ...nextPinnedDrawerByKey
-            } = state.pinnedTerminalDrawerByProjectEnvironmentKey;
+            const { [drawerKey]: _removed, ...nextPinnedDrawerByKey } =
+              state.pinnedTerminalDrawerByProjectEnvironmentKey;
 
             return {
               terminalStateByThreadKey: nextTerminalStateByThreadKey,
@@ -1463,10 +1464,8 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             if (!normalized.terminalIds.includes(terminalId)) return state;
 
             if (normalized.terminalIds.length <= 1) {
-              const {
-                [drawerKey]: _removed,
-                ...nextPinnedDrawerByKey
-              } = state.pinnedTerminalDrawerByProjectEnvironmentKey;
+              const { [drawerKey]: _removed, ...nextPinnedDrawerByKey } =
+                state.pinnedTerminalDrawerByProjectEnvironmentKey;
               return { pinnedTerminalDrawerByProjectEnvironmentKey: nextPinnedDrawerByKey };
             }
 
