@@ -177,6 +177,7 @@ async function mountTerminalViewport(props: {
       onNewTerminalShortcut={() => undefined}
       onCycleTerminalTabShortcut={() => undefined}
       onSplitFocusNextShortcut={() => undefined}
+      onPinDrawerShortcut={() => undefined}
       focusRequestId={0}
       autoFocus={false}
       resizeEpoch={0}
@@ -201,6 +202,7 @@ async function mountTerminalViewport(props: {
           onNewTerminalShortcut={() => undefined}
           onCycleTerminalTabShortcut={() => undefined}
           onSplitFocusNextShortcut={() => undefined}
+          onPinDrawerShortcut={() => undefined}
           focusRequestId={0}
           autoFocus={false}
           resizeEpoch={0}

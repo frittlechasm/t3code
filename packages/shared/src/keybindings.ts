@@ -38,6 +38,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+[", command: "terminal.tabPrevious", when: "terminalFocus" },
   { key: "mod+]", command: "terminal.tabNext", when: "terminalFocus" },
   { key: "mod+\\", command: "terminal.splitFocusNext", when: "terminalFocus" },
+  { key: "mod+shift+p", command: "terminal.pinDrawer", when: "terminalFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,
