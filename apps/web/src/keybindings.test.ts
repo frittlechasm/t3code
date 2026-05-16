@@ -25,6 +25,7 @@ import {
   isNativeTerminalNewTabShortcut,
   nativeTerminalTabTraversalDirection,
   resolveTerminalShortcutAction,
+  resolveTerminalTabJumpIndex,
   resolveShortcutCommand,
   shouldShowModelPickerJumpHints,
   shouldShowThreadJumpHints,
@@ -32,6 +33,8 @@ import {
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
   terminalShortcutActionFromCommand,
+  terminalTabJumpCommandForIndex,
+  terminalTabJumpIndexFromCommand,
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
   threadTraversalDirectionFromCommand,
@@ -165,6 +168,21 @@ const DEFAULT_BINDINGS = compile([
     shortcut: modShortcut("3"),
     command: "modelPicker.jump.3",
     whenAst: whenIdentifier("modelPickerOpen"),
+  },
+  {
+    shortcut: modShortcut("1"),
+    command: "terminal.tab.1",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("2"),
+    command: "terminal.tab.2",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("3"),
+    command: "terminal.tab.3",
+    whenAst: whenIdentifier("terminalFocus"),
   },
 ]);
 
@@ -974,6 +992,83 @@ describe("plus key parsing", () => {
       isTerminalToggleShortcut(event({ key: "+", ctrlKey: true }), plusBindings, {
         platform: "Linux",
       }),
+    );
+  });
+});
+
+describe("terminal tab jump shortcuts", () => {
+  it("maps terminal.tab.N commands to 0-based indices", () => {
+    assert.strictEqual(terminalTabJumpCommandForIndex(0), "terminal.tab.1");
+    assert.strictEqual(terminalTabJumpCommandForIndex(8), "terminal.tab.9");
+    assert.isNull(terminalTabJumpCommandForIndex(9));
+    assert.strictEqual(terminalTabJumpIndexFromCommand("terminal.tab.1"), 0);
+    assert.strictEqual(terminalTabJumpIndexFromCommand("terminal.tab.9"), 8);
+    assert.isNull(terminalTabJumpIndexFromCommand("thread.jump.1"));
+    assert.isNull(terminalTabJumpIndexFromCommand("terminal.tabNext"));
+  });
+
+  it("resolves Mod+1 to tab jump index 0 when terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveTerminalTabJumpIndex(
+        event({ key: "1", metaKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+      0,
+    );
+    assert.strictEqual(
+      resolveTerminalTabJumpIndex(
+        event({ key: "3", ctrlKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "Linux", context: { terminalFocus: true } },
+      ),
+      2,
+    );
+  });
+
+  it("returns null when terminalFocus is false", () => {
+    assert.isNull(
+      resolveTerminalTabJumpIndex(
+        event({ key: "1", metaKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+    );
+  });
+
+  it("Mod+1 resolves to terminal.tab.1 (not thread.jump.1) when terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "1", metaKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+      "terminal.tab.1",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "1", metaKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+      "thread.jump.1",
+    );
+  });
+
+  it("shortcutLabelForCommand returns the correct label for terminal.tab.1", () => {
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.tab.1", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⌘1",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.tab.1", {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "Ctrl+1",
     );
   });
 });

@@ -56,6 +56,7 @@ import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
   resolveTerminalShortcutAction,
+  resolveTerminalTabJumpIndex,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
@@ -300,6 +301,7 @@ interface TerminalViewportProps {
   ) => void;
   onNewTerminalShortcut: () => void;
   onCycleTerminalTabShortcut: (direction: "previous" | "next") => void;
+  onTabJumpShortcut: (index: number) => void;
   onSplitFocusNextShortcut: () => void;
   onPinDrawerShortcut: () => void;
   focusRequestId: number;
@@ -323,6 +325,7 @@ export function TerminalViewport({
   onSplitTerminalShortcut,
   onNewTerminalShortcut,
   onCycleTerminalTabShortcut,
+  onTabJumpShortcut,
   onSplitFocusNextShortcut,
   onPinDrawerShortcut,
   focusRequestId,
@@ -360,6 +363,9 @@ export function TerminalViewport({
   });
   const handleCycleTerminalTabShortcut = useEffectEvent((direction: "previous" | "next") => {
     onCycleTerminalTabShortcut(direction);
+  });
+  const handleTabJumpShortcut = useEffectEvent((index: number) => {
+    onTabJumpShortcut(index);
   });
   const handleSplitFocusNextShortcut = useEffectEvent(() => {
     onSplitFocusNextShortcut();
@@ -531,6 +537,16 @@ export function TerminalViewport({
       }
 
       if (terminalAction !== null || isDiffToggleShortcut(event, currentKeybindings, options)) {
+        return false;
+      }
+
+      const tabJumpIndex = resolveTerminalTabJumpIndex(event, currentKeybindings, options);
+      if (tabJumpIndex !== null) {
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleTabJumpShortcut(tabJumpIndex);
+        }
         return false;
       }
 
@@ -1103,6 +1119,7 @@ interface TerminalSplitLayoutViewProps {
   onSplitTerminal: (orientation: TerminalSplitOrientation, anchorTerminalId?: string) => void;
   onNewTerminalAction: () => void;
   onCycleTerminalTabAction: (direction: "previous" | "next") => void;
+  onTabJumpAction: (index: number) => void;
   onSplitFocusNextAction: () => void;
   onPinDrawerAction: () => void;
   focusRequestId: number;
@@ -1137,6 +1154,7 @@ function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
           onSplitTerminalShortcut={props.onSplitTerminal}
           onNewTerminalShortcut={props.onNewTerminalAction}
           onCycleTerminalTabShortcut={props.onCycleTerminalTabAction}
+          onTabJumpShortcut={props.onTabJumpAction}
           onSplitFocusNextShortcut={props.onSplitFocusNextAction}
           onPinDrawerShortcut={props.onPinDrawerAction}
           focusRequestId={props.focusRequestId}
@@ -1308,6 +1326,17 @@ export default function ThreadTerminalDrawer({
       onActiveTerminalChange(nextTerminalId);
     },
     [onActiveTerminalChange, resolvedActiveGroupIndex, resolvedTerminalGroups, showTerminalTabs],
+  );
+  const onTerminalTabJumpAction = useCallback(
+    (index: number) => {
+      if (!showTerminalTabs || resolvedTerminalGroups.length <= 1) return;
+      const group = resolvedTerminalGroups[index];
+      if (!group) return;
+      const nextTerminalId = group.terminalIds[0];
+      if (!nextTerminalId) return;
+      onActiveTerminalChange(nextTerminalId);
+    },
+    [onActiveTerminalChange, resolvedTerminalGroups, showTerminalTabs],
   );
   const onSplitFocusNextAction = useCallback(() => {
     if (visibleTerminalIds.length <= 1) return;
@@ -1698,6 +1727,7 @@ export default function ThreadTerminalDrawer({
                 onSplitTerminal={onSplitTerminal}
                 onNewTerminalAction={onNewTerminalAction}
                 onCycleTerminalTabAction={onCycleTerminalTabAction}
+                onTabJumpAction={onTerminalTabJumpAction}
                 onSplitFocusNextAction={onSplitFocusNextAction}
                 onPinDrawerAction={onPinButtonClick}
                 focusRequestId={focusRequestId}
@@ -1722,6 +1752,7 @@ export default function ThreadTerminalDrawer({
                   onSplitTerminalShortcut={onSplitTerminal}
                   onNewTerminalShortcut={onNewTerminalAction}
                   onCycleTerminalTabShortcut={onCycleTerminalTabAction}
+                  onTabJumpShortcut={onTerminalTabJumpAction}
                   onSplitFocusNextShortcut={onSplitFocusNextAction}
                   onPinDrawerShortcut={onPinButtonClick}
                   focusRequestId={focusRequestId}
