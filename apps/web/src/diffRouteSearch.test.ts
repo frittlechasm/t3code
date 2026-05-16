@@ -47,6 +47,34 @@ describe("parseDiffRouteSearch", () => {
     expect(getOpenRightPanel(parsed)).toBe("files");
   });
 
+  it("parses panel=diff with turn and file", () => {
+    const parsed = parseDiffRouteSearch({
+      panel: "diff",
+      diffTurnId: "turn-1",
+      diffFilePath: "src/app.ts",
+    });
+
+    expect(parsed).toEqual({
+      panel: "diff",
+      diffTurnId: "turn-1",
+      diffFilePath: "src/app.ts",
+    });
+    expect(isDiffPanelOpen(parsed)).toBe(true);
+  });
+
+  it("ignores tasks panel state because tasks use the chat sidebar", () => {
+    const parsed = parseDiffRouteSearch({ panel: "tasks" });
+
+    expect(parsed).toEqual({});
+    expect(isDiffPanelOpen(parsed)).toBe(false);
+  });
+
+  it("keeps legacy diff=1 as a compatibility alias", () => {
+    const parsed = parseDiffRouteSearch({ diff: "1" });
+
+    expect(isDiffPanelOpen(parsed)).toBe(true);
+  });
+
   it("treats numeric and boolean diff toggles as open", () => {
     expect(
       parseDiffRouteSearch({
@@ -100,5 +128,15 @@ describe("parseDiffRouteSearch", () => {
     expect(parsed).toEqual({
       panel: "diff",
     });
+  });
+
+  it("ignores unknown panel values", () => {
+    const parsed = parseDiffRouteSearch({ panel: "unknown" });
+    expect(parsed).toEqual({});
+  });
+
+  it("isDiffPanelOpen is false for tasks panel", () => {
+    const parsed = parseDiffRouteSearch({ panel: "tasks" });
+    expect(isDiffPanelOpen(parsed)).toBe(false);
   });
 });

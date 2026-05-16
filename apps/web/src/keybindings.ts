@@ -426,6 +426,14 @@ export function isFileExplorerFocusSearchShortcut(
   return matchesCommandShortcut(event, keybindings, "fileExplorer.focusSearch", options);
 }
 
+export function isTaskWindowToggleShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "taskWindow.toggle", options);
+}
+
 export function isChatNewShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
