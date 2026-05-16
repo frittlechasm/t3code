@@ -92,6 +92,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
+  type TerminalSplitOrientation,
   type ChatMessage,
   type SessionPhase,
   type Thread,
@@ -451,6 +452,7 @@ interface PersistentThreadTerminalDrawerProps {
   focusRequestId: number;
   placementShortcutLabel: string | undefined;
   splitShortcutLabel: string | undefined;
+  splitHorizontalShortcutLabel: string | undefined;
   newShortcutLabel: string | undefined;
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
@@ -467,6 +469,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   focusRequestId,
   placementShortcutLabel,
   splitShortcutLabel,
+  splitHorizontalShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
   keybindings,
@@ -686,6 +689,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         onSplitTerminal={splitTerminal}
         onNewTerminal={createNewTerminal}
         splitShortcutLabel={visible ? splitShortcutLabel : undefined}
+        splitHorizontalShortcutLabel={visible ? splitHorizontalShortcutLabel : undefined}
         newShortcutLabel={visible ? newShortcutLabel : undefined}
         closeShortcutLabel={visible ? closeShortcutLabel : undefined}
         keybindings={keybindings}
@@ -1789,6 +1793,15 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "terminal.split", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
   );
+  const splitHorizontalTerminalShortcutLabel = useMemo(
+    () =>
+      shortcutLabelForCommand(
+        keybindings,
+        "terminal.splitHorizontal",
+        terminalShortcutLabelOptions,
+      ),
+    [keybindings, terminalShortcutLabelOptions],
+  );
   const newTerminalShortcutLabel = useMemo(
     () => shortcutLabelForCommand(keybindings, "terminal.new", terminalShortcutLabelOptions),
     [keybindings, terminalShortcutLabelOptions],
@@ -1917,12 +1930,15 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     storeToggleTerminalPlacement(activeThreadRef);
   }, [activeThreadRef, storeToggleTerminalPlacement]);
-  const splitTerminal = useCallback(() => {
-    if (!activeThreadRef || hasReachedSplitLimit) return;
-    const terminalId = `terminal-${randomUUID()}`;
-    storeSplitTerminal(activeThreadRef, terminalId);
-    setTerminalFocusRequestId((value) => value + 1);
-  }, [activeThreadRef, hasReachedSplitLimit, storeSplitTerminal]);
+  const splitTerminal = useCallback(
+    (orientation: TerminalSplitOrientation = "vertical", anchorTerminalId?: string) => {
+      if (!activeThreadRef || hasReachedSplitLimit) return;
+      const terminalId = `terminal-${randomUUID()}`;
+      storeSplitTerminal(activeThreadRef, terminalId, orientation, anchorTerminalId);
+      setTerminalFocusRequestId((value) => value + 1);
+    },
+    [activeThreadRef, hasReachedSplitLimit, storeSplitTerminal],
+  );
   const createNewTerminal = useCallback(() => {
     if (!activeThreadRef) return;
     const terminalId = `terminal-${randomUUID()}`;
@@ -2690,13 +2706,13 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
-    if (terminalAction === "split") {
+    if (terminalAction === "split" || terminalAction === "splitHorizontal") {
       event.preventDefault();
       event.stopPropagation();
       if (!terminalState.terminalOpen) {
         setTerminalOpen(true);
       }
-      splitTerminal();
+      splitTerminal(terminalAction === "splitHorizontal" ? "horizontal" : "vertical");
       return;
     }
 
@@ -3954,6 +3970,7 @@ export default function ChatView(props: ChatViewProps) {
                   focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
                   placementShortcutLabel={terminalPlacementShortcutLabel ?? undefined}
                   splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                  splitHorizontalShortcutLabel={splitHorizontalTerminalShortcutLabel ?? undefined}
                   newShortcutLabel={newTerminalShortcutLabel ?? undefined}
                   closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
                   keybindings={keybindings}
@@ -3998,6 +4015,7 @@ export default function ChatView(props: ChatViewProps) {
                 focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
                 placementShortcutLabel={terminalPlacementShortcutLabel ?? undefined}
                 splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                splitHorizontalShortcutLabel={splitHorizontalTerminalShortcutLabel ?? undefined}
                 newShortcutLabel={newTerminalShortcutLabel ?? undefined}
                 closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
                 keybindings={keybindings}

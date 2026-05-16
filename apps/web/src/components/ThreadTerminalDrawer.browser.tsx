@@ -173,6 +173,7 @@ async function mountTerminalViewport(props: {
       cwd="/repo/project"
       onSessionExited={() => undefined}
       onAddTerminalContext={() => undefined}
+      onSplitTerminalShortcut={() => undefined}
       onNewTerminalShortcut={() => undefined}
       onCycleTerminalTabShortcut={() => undefined}
       onSplitFocusNextShortcut={() => undefined}
@@ -196,6 +197,7 @@ async function mountTerminalViewport(props: {
           cwd="/repo/project"
           onSessionExited={() => undefined}
           onAddTerminalContext={() => undefined}
+          onSplitTerminalShortcut={() => undefined}
           onNewTerminalShortcut={() => undefined}
           onCycleTerminalTabShortcut={() => undefined}
           onSplitFocusNextShortcut={() => undefined}

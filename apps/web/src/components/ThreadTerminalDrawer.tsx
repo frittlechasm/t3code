@@ -3,6 +3,7 @@ import {
   PanelBottomIcon,
   PanelRightIcon,
   Plus,
+  Rows3Icon,
   SquareSplitHorizontal,
   TerminalSquare,
   Trash2,
@@ -51,6 +52,8 @@ import {
   DEFAULT_THREAD_TERMINAL_WIDTH,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
+  type TerminalSplitLayout,
+  type TerminalSplitOrientation,
   type ThreadTerminalGroup,
 } from "../types";
 import { readEnvironmentApi } from "~/environmentApi";
@@ -278,6 +281,10 @@ interface TerminalViewportProps {
   runtimeEnv?: Record<string, string>;
   onSessionExited: () => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onSplitTerminalShortcut: (
+    orientation: TerminalSplitOrientation,
+    anchorTerminalId: string,
+  ) => void;
   onNewTerminalShortcut: () => void;
   onCycleTerminalTabShortcut: (direction: "previous" | "next") => void;
   onSplitFocusNextShortcut: () => void;
@@ -298,6 +305,7 @@ export function TerminalViewport({
   runtimeEnv,
   onSessionExited,
   onAddTerminalContext,
+  onSplitTerminalShortcut,
   onNewTerminalShortcut,
   onCycleTerminalTabShortcut,
   onSplitFocusNextShortcut,
@@ -328,6 +336,9 @@ export function TerminalViewport({
   });
   const handleNewTerminalShortcut = useEffectEvent(() => {
     onNewTerminalShortcut();
+  });
+  const handleSplitTerminalShortcut = useEffectEvent((orientation: TerminalSplitOrientation) => {
+    onSplitTerminalShortcut(orientation, terminalId);
   });
   const handleCycleTerminalTabShortcut = useEffectEvent((direction: "previous" | "next") => {
     onCycleTerminalTabShortcut(direction);
@@ -455,6 +466,16 @@ export function TerminalViewport({
       const currentKeybindings = keybindingsRef.current;
       const options = { context: { terminalFocus: true, terminalOpen: true } };
       const terminalAction = resolveTerminalShortcutAction(event, currentKeybindings, options);
+      if (terminalAction === "split" || terminalAction === "splitHorizontal") {
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSplitTerminalShortcut(
+            terminalAction === "splitHorizontal" ? "horizontal" : "vertical",
+          );
+        }
+        return false;
+      }
       if (terminalAction === "new") {
         if (!event.defaultPrevented) {
           event.preventDefault();
@@ -870,9 +891,10 @@ interface ThreadTerminalDrawerProps {
   terminalGroups: ThreadTerminalGroup[];
   activeTerminalGroupId: string;
   focusRequestId: number;
-  onSplitTerminal: () => void;
+  onSplitTerminal: (orientation: TerminalSplitOrientation, anchorTerminalId?: string) => void;
   onNewTerminal: () => void;
   splitShortcutLabel?: string | undefined;
+  splitHorizontalShortcutLabel?: string | undefined;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
@@ -899,11 +921,31 @@ interface ThreadTerminalDrawerLayout {
   terminalGroups: ThreadTerminalGroup[];
   activeGroupIndex: number;
   visibleTerminalIds: string[];
+  visibleSplitLayout?: TerminalSplitLayout;
   terminalLabelById: Map<string, string>;
   tabs: ThreadTerminalDrawerTab[];
   showTerminalTabs: boolean;
   isSplitView: boolean;
   hasReachedSplitLimit: boolean;
+}
+
+function createTerminalSplitLayoutFromTerminalIds(
+  terminalIds: string[],
+  orientation: TerminalSplitOrientation = "vertical",
+): TerminalSplitLayout | undefined {
+  const [firstTerminalId, ...restTerminalIds] = terminalIds;
+  if (!firstTerminalId) return undefined;
+  if (restTerminalIds.length === 0) return { type: "terminal", terminalId: firstTerminalId };
+  return {
+    type: "split",
+    orientation,
+    children: terminalIds.map((terminalId) => ({ type: "terminal", terminalId })),
+  };
+}
+
+function collectTerminalIdsFromSplitLayout(layout: TerminalSplitLayout): string[] {
+  if (layout.type === "terminal") return [layout.terminalId];
+  return layout.children.flatMap(collectTerminalIdsFromSplitLayout);
 }
 
 export function resolveThreadTerminalDrawerLayout(options: {
@@ -917,7 +959,7 @@ export function resolveThreadTerminalDrawerLayout(options: {
   const activeTerminalId = terminalIds.includes(options.activeTerminalId)
     ? options.activeTerminalId
     : (terminalIds[0] ?? DEFAULT_THREAD_TERMINAL_ID);
-  const fallbackTerminalGroups = [
+  const fallbackTerminalGroups: ThreadTerminalGroup[] = [
     {
       id: `group-${activeTerminalId}`,
       terminalIds: [activeTerminalId],
@@ -938,6 +980,15 @@ export function resolveThreadTerminalDrawerLayout(options: {
           0,
         );
   const visibleTerminalIds = terminalGroups[activeGroupIndex]?.terminalIds ?? [activeTerminalId];
+  const visibleGroup = terminalGroups[activeGroupIndex];
+  const visibleSplitLayout =
+    visibleTerminalIds.length > 1
+      ? (visibleGroup?.splitLayout ??
+        createTerminalSplitLayoutFromTerminalIds(
+          visibleTerminalIds,
+          visibleGroup?.splitOrientation === "horizontal" ? "horizontal" : "vertical",
+        ))
+      : undefined;
   const terminalLabelById = new Map(
     terminalIds.map((terminalId, index) => [terminalId, `Terminal ${index + 1}`]),
   );
@@ -965,6 +1016,7 @@ export function resolveThreadTerminalDrawerLayout(options: {
     terminalGroups,
     activeGroupIndex,
     visibleTerminalIds,
+    ...(visibleSplitLayout ? { visibleSplitLayout } : {}),
     terminalLabelById,
     tabs,
     showTerminalTabs: terminalIds.length > 1,
@@ -1002,6 +1054,88 @@ function TerminalActionButton({ label, className, onClick, children }: TerminalA
   );
 }
 
+interface TerminalSplitLayoutViewProps {
+  layout: TerminalSplitLayout;
+  threadRef: ScopedThreadRef;
+  threadId: ThreadId;
+  terminalLabelById: Map<string, string>;
+  activeTerminalId: string;
+  cwd: string;
+  worktreePath?: string | null;
+  runtimeEnv?: Record<string, string>;
+  onActiveTerminalChange: (terminalId: string) => void;
+  onCloseTerminal: (terminalId: string) => void;
+  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onSplitTerminal: (orientation: TerminalSplitOrientation, anchorTerminalId?: string) => void;
+  onNewTerminalAction: () => void;
+  onCycleTerminalTabAction: (direction: "previous" | "next") => void;
+  onSplitFocusNextAction: () => void;
+  focusRequestId: number;
+  resizeEpoch: number;
+  drawerHeight: number;
+  keybindings: ResolvedKeybindingsConfig;
+}
+
+function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
+  if (props.layout.type === "terminal") {
+    const terminalId = props.layout.terminalId;
+    return (
+      <div
+        className="h-full p-1"
+        onMouseDown={() => {
+          if (terminalId !== props.activeTerminalId) {
+            props.onActiveTerminalChange(terminalId);
+          }
+        }}
+      >
+        <TerminalViewport
+          threadRef={props.threadRef}
+          threadId={props.threadId}
+          terminalId={terminalId}
+          terminalLabel={props.terminalLabelById.get(terminalId) ?? "Terminal"}
+          cwd={props.cwd}
+          {...(props.worktreePath !== undefined ? { worktreePath: props.worktreePath } : {})}
+          {...(props.runtimeEnv ? { runtimeEnv: props.runtimeEnv } : {})}
+          onSessionExited={() => props.onCloseTerminal(terminalId)}
+          onAddTerminalContext={props.onAddTerminalContext}
+          onSplitTerminalShortcut={props.onSplitTerminal}
+          onNewTerminalShortcut={props.onNewTerminalAction}
+          onCycleTerminalTabShortcut={props.onCycleTerminalTabAction}
+          onSplitFocusNextShortcut={props.onSplitFocusNextAction}
+          focusRequestId={props.focusRequestId}
+          autoFocus={terminalId === props.activeTerminalId}
+          resizeEpoch={props.resizeEpoch}
+          drawerHeight={props.drawerHeight}
+          keybindings={props.keybindings}
+        />
+      </div>
+    );
+  }
+
+  const isHorizontal = props.layout.orientation === "horizontal";
+  return (
+    <div
+      className="grid h-full min-h-0 min-w-0 overflow-hidden"
+      style={
+        isHorizontal
+          ? { gridTemplateRows: `repeat(${props.layout.children.length}, minmax(0, 1fr))` }
+          : { gridTemplateColumns: `repeat(${props.layout.children.length}, minmax(0, 1fr))` }
+      }
+    >
+      {props.layout.children.map((child) => (
+        <div
+          key={collectTerminalIdsFromSplitLayout(child).join(":")}
+          className={`min-h-0 min-w-0 ${
+            isHorizontal ? "border-t first:border-t-0" : "border-l first:border-l-0"
+          } border-border/70`}
+        >
+          <TerminalSplitLayoutView {...props} layout={child} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ThreadTerminalDrawer({
   threadRef,
   threadId,
@@ -1021,6 +1155,7 @@ export default function ThreadTerminalDrawer({
   onSplitTerminal,
   onNewTerminal,
   splitShortcutLabel,
+  splitHorizontalShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
   onActiveTerminalChange,
@@ -1067,6 +1202,7 @@ export default function ThreadTerminalDrawer({
     terminalGroups: resolvedTerminalGroups,
     activeGroupIndex: resolvedActiveGroupIndex,
     visibleTerminalIds,
+    visibleSplitLayout,
     terminalLabelById,
     tabs,
     showTerminalTabs,
@@ -1083,6 +1219,11 @@ export default function ThreadTerminalDrawer({
     : splitShortcutLabel
       ? `Split Terminal (${splitShortcutLabel})`
       : "Split Terminal";
+  const splitHorizontalTerminalActionLabel = hasReachedSplitLimit
+    ? `Split Terminal Horizontally (max ${MAX_TERMINALS_PER_GROUP} per group)`
+    : splitHorizontalShortcutLabel
+      ? `Split Terminal Horizontally (${splitHorizontalShortcutLabel})`
+      : "Split Terminal Horizontally";
   const newTerminalActionLabel = newShortcutLabel
     ? `New Terminal (${newShortcutLabel})`
     : "New Terminal";
@@ -1094,7 +1235,11 @@ export default function ThreadTerminalDrawer({
     : `Move Terminal ${placement === "right" ? "to Bottom" : "to Right"}`;
   const onSplitTerminalAction = useCallback(() => {
     if (hasReachedSplitLimit) return;
-    onSplitTerminal();
+    onSplitTerminal("vertical");
+  }, [hasReachedSplitLimit, onSplitTerminal]);
+  const onSplitHorizontalTerminalAction = useCallback(() => {
+    if (hasReachedSplitLimit) return;
+    onSplitTerminal("horizontal");
   }, [hasReachedSplitLimit, onSplitTerminal]);
   const onNewTerminalAction = useCallback(() => {
     onNewTerminal();
@@ -1316,6 +1461,18 @@ export default function ThreadTerminalDrawer({
             </TerminalActionButton>
             <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
+              className={`p-1 text-foreground/90 transition-colors ${
+                hasReachedSplitLimit
+                  ? "cursor-not-allowed opacity-45 hover:bg-transparent"
+                  : "hover:bg-accent"
+              }`}
+              onClick={onSplitHorizontalTerminalAction}
+              label={splitHorizontalTerminalActionLabel}
+            >
+              <Rows3Icon className="size-3.25" />
+            </TerminalActionButton>
+            <div className="h-4 w-px bg-border/80" />
+            <TerminalActionButton
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"
               onClick={onNewTerminalAction}
               label={newTerminalActionLabel}
@@ -1416,6 +1573,17 @@ export default function ThreadTerminalDrawer({
               <SquareSplitHorizontal className="size-3.25" />
             </TerminalActionButton>
             <TerminalActionButton
+              className={`p-1 text-foreground/90 transition-colors ${
+                hasReachedSplitLimit
+                  ? "cursor-not-allowed opacity-45 hover:bg-transparent"
+                  : "hover:bg-accent"
+              }`}
+              onClick={onSplitHorizontalTerminalAction}
+              label={splitHorizontalTerminalActionLabel}
+            >
+              <Rows3Icon className="size-3.25" />
+            </TerminalActionButton>
+            <TerminalActionButton
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"
               onClick={onTogglePlacement}
               label={placementActionLabel}
@@ -1440,49 +1608,28 @@ export default function ThreadTerminalDrawer({
       <div className="min-h-0 w-full flex-1">
         <div className={`flex h-full min-h-0 ${hasTerminalSidebar ? "gap-1.5" : ""}`}>
           <div className="min-w-0 flex-1">
-            {isSplitView ? (
-              <div
-                className="grid h-full w-full min-w-0 gap-0 overflow-hidden"
-                style={{
-                  gridTemplateColumns: `repeat(${visibleTerminalIds.length}, minmax(0, 1fr))`,
-                }}
-              >
-                {visibleTerminalIds.map((terminalId) => (
-                  <div
-                    key={terminalId}
-                    className={`min-h-0 min-w-0 border-l first:border-l-0 ${
-                      terminalId === resolvedActiveTerminalId ? "border-border" : "border-border/70"
-                    }`}
-                    onMouseDown={() => {
-                      if (terminalId !== resolvedActiveTerminalId) {
-                        onActiveTerminalChange(terminalId);
-                      }
-                    }}
-                  >
-                    <div className="h-full p-1">
-                      <TerminalViewport
-                        threadRef={threadRef}
-                        threadId={threadId}
-                        terminalId={terminalId}
-                        terminalLabel={terminalLabelById.get(terminalId) ?? "Terminal"}
-                        cwd={cwd}
-                        {...(worktreePath !== undefined ? { worktreePath } : {})}
-                        {...(runtimeEnv ? { runtimeEnv } : {})}
-                        onSessionExited={() => onCloseTerminal(terminalId)}
-                        onAddTerminalContext={onAddTerminalContext}
-                        onNewTerminalShortcut={onNewTerminalAction}
-                        onCycleTerminalTabShortcut={onCycleTerminalTabAction}
-                        onSplitFocusNextShortcut={onSplitFocusNextAction}
-                        focusRequestId={focusRequestId}
-                        autoFocus={terminalId === resolvedActiveTerminalId}
-                        resizeEpoch={resizeEpoch}
-                        drawerHeight={drawerHeight}
-                        keybindings={keybindings}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {isSplitView && visibleSplitLayout ? (
+              <TerminalSplitLayoutView
+                layout={visibleSplitLayout}
+                threadRef={threadRef}
+                threadId={threadId}
+                terminalLabelById={terminalLabelById}
+                activeTerminalId={resolvedActiveTerminalId}
+                cwd={cwd}
+                {...(worktreePath !== undefined ? { worktreePath } : {})}
+                {...(runtimeEnv ? { runtimeEnv } : {})}
+                onActiveTerminalChange={onActiveTerminalChange}
+                onCloseTerminal={onCloseTerminal}
+                onAddTerminalContext={onAddTerminalContext}
+                onSplitTerminal={onSplitTerminal}
+                onNewTerminalAction={onNewTerminalAction}
+                onCycleTerminalTabAction={onCycleTerminalTabAction}
+                onSplitFocusNextAction={onSplitFocusNextAction}
+                focusRequestId={focusRequestId}
+                resizeEpoch={resizeEpoch}
+                drawerHeight={drawerHeight}
+                keybindings={keybindings}
+              />
             ) : (
               <div className="h-full p-1">
                 <TerminalViewport
@@ -1496,6 +1643,7 @@ export default function ThreadTerminalDrawer({
                   {...(runtimeEnv ? { runtimeEnv } : {})}
                   onSessionExited={() => onCloseTerminal(resolvedActiveTerminalId)}
                   onAddTerminalContext={onAddTerminalContext}
+                  onSplitTerminalShortcut={onSplitTerminal}
                   onNewTerminalShortcut={onNewTerminalAction}
                   onCycleTerminalTabShortcut={onCycleTerminalTabAction}
                   onSplitFocusNextShortcut={onSplitFocusNextAction}
@@ -1523,6 +1671,17 @@ export default function ThreadTerminalDrawer({
                     label={splitTerminalActionLabel}
                   >
                     <SquareSplitHorizontal className="size-3.25" />
+                  </TerminalActionButton>
+                  <TerminalActionButton
+                    className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
+                      hasReachedSplitLimit
+                        ? "cursor-not-allowed opacity-45 hover:bg-transparent"
+                        : "hover:bg-accent/70"
+                    }`}
+                    onClick={onSplitHorizontalTerminalAction}
+                    label={splitHorizontalTerminalActionLabel}
+                  >
+                    <Rows3Icon className="size-3.25" />
                   </TerminalActionButton>
                   <TerminalActionButton
                     className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"

@@ -16,6 +16,14 @@ const OTHER_THREAD_REF = scopeThreadRef("environment-b" as never, THREAD_ID);
 const LOGICAL_PROJECT_KEY = "repo:owner/project";
 const OTHER_LOGICAL_PROJECT_KEY = "repo:owner/project:other";
 
+function flatSplitLayout(orientation: "vertical" | "horizontal", terminalIds: string[]) {
+  return {
+    type: "split" as const,
+    orientation,
+    children: terminalIds.map((terminalId) => ({ type: "terminal" as const, terminalId })),
+  };
+}
+
 function makeTerminalEvent(
   type: TerminalEvent["type"],
   overrides: Partial<TerminalEvent> = {},
@@ -113,7 +121,38 @@ describe("terminalStateStore actions", () => {
     expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
     expect(terminalState.activeTerminalId).toBe("terminal-2");
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
+    ]);
+  });
+
+  it("normalizes legacy split groups without orientation to vertical", () => {
+    const terminalState = selectThreadTerminalState(
+      {
+        [scopedThreadKey(THREAD_REF)]: {
+          terminalOpen: true,
+          terminalPlacement: "bottom",
+          terminalIds: ["default", "terminal-2"],
+          runningTerminalIds: [],
+          activeTerminalId: "terminal-2",
+          terminalGroups: [{ id: "group-default", terminalIds: ["default", "terminal-2"] }],
+          activeTerminalGroupId: "group-default",
+        },
+      },
+      THREAD_REF,
+    );
+
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
     ]);
   });
 
@@ -135,7 +174,84 @@ describe("terminalStateStore actions", () => {
       "terminal-4",
     ]);
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2", "terminal-3", "terminal-4"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2", "terminal-3", "terminal-4"],
+        splitOrientation: "vertical",
+        splitLayout: {
+          type: "split",
+          orientation: "vertical",
+          children: [
+            { type: "terminal", terminalId: "default" },
+            {
+              type: "split",
+              orientation: "vertical",
+              children: [
+                { type: "terminal", terminalId: "terminal-2" },
+                {
+                  type: "split",
+                  orientation: "vertical",
+                  children: [
+                    { type: "terminal", terminalId: "terminal-3" },
+                    { type: "terminal", terminalId: "terminal-4" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("uses the requested orientation for the first split in a group", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2", "horizontal");
+
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "horizontal",
+        splitLayout: flatSplitLayout("horizontal", ["default", "terminal-2"]),
+      },
+    ]);
+  });
+
+  it("nests later split shortcuts under the focused terminal", () => {
+    const store = useTerminalStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2", "horizontal");
+    store.splitTerminal(THREAD_REF, "terminal-3", "vertical", "default");
+
+    const terminalState = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalState.terminalGroups).toEqual([
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-3", "terminal-2"],
+        splitOrientation: "horizontal",
+        splitLayout: {
+          type: "split",
+          orientation: "horizontal",
+          children: [
+            {
+              type: "split",
+              orientation: "vertical",
+              children: [
+                { type: "terminal", terminalId: "default" },
+                { type: "terminal", terminalId: "terminal-3" },
+              ],
+            },
+            { type: "terminal", terminalId: "terminal-2" },
+          ],
+        },
+      },
     ]);
   });
 
@@ -167,7 +283,12 @@ describe("terminalStateStore actions", () => {
     expect(terminalState.activeTerminalId).toBe("terminal-3");
     expect(terminalState.activeTerminalGroupId).toBe("group-terminal-3");
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
       { id: "group-terminal-3", terminalIds: ["terminal-3"] },
     ]);
   });
@@ -453,7 +574,12 @@ describe("terminalStateStore actions", () => {
     expect(terminalState.activeTerminalId).toBe("terminal-2");
     expect(terminalState.terminalIds).toEqual(["default", "terminal-2"]);
     expect(terminalState.terminalGroups).toEqual([
-      { id: "group-default", terminalIds: ["default", "terminal-2"] },
+      {
+        id: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        splitOrientation: "vertical",
+        splitLayout: flatSplitLayout("vertical", ["default", "terminal-2"]),
+      },
     ]);
   });
 

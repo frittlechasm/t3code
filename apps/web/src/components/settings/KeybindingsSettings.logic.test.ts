@@ -123,6 +123,7 @@ describe("KeybindingsSettings.logic", () => {
   it("formats static and project script command labels", () => {
     expect(commandLabel("commandPalette.toggle")).toBe("Command Palette: Toggle");
     expect(commandLabel("terminal.togglePlacement")).toBe("Terminal: Toggle Placement");
+    expect(commandLabel("terminal.splitHorizontal")).toBe("Terminal: Split Horizontal");
     expect(commandLabel("script.setup-db.run")).toBe("Run Script: Setup Db");
   });
 

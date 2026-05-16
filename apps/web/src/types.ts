@@ -27,10 +27,16 @@ export const DEFAULT_THREAD_TERMINAL_WIDTH = 420;
 export const DEFAULT_THREAD_TERMINAL_ID = "default";
 export const MAX_TERMINALS_PER_GROUP = 4;
 export type ProjectScript = ContractProjectScript;
+export type TerminalSplitOrientation = "vertical" | "horizontal";
+export type TerminalSplitLayout =
+  | { type: "terminal"; terminalId: string }
+  | { type: "split"; orientation: TerminalSplitOrientation; children: TerminalSplitLayout[] };
 
 export interface ThreadTerminalGroup {
   id: string;
   terminalIds: string[];
+  splitOrientation?: TerminalSplitOrientation;
+  splitLayout?: TerminalSplitLayout;
 }
 
 export interface ChatImageAttachment {

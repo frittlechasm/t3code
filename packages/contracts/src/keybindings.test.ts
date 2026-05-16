@@ -41,6 +41,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedTogglePlacement.command, "terminal.togglePlacement");
 
+    const parsedSplitHorizontal = yield* decode(KeybindingRule, {
+      key: "mod+shift+d",
+      command: "terminal.splitHorizontal",
+    });
+    assert.strictEqual(parsedSplitHorizontal.command, "terminal.splitHorizontal");
+
     const parsedTabNext = yield* decode(KeybindingRule, {
       key: "mod+]",
       command: "terminal.tabNext",
@@ -112,8 +118,9 @@ it.effect("parses keybindings array payload", () =>
     const parsed = yield* decode(KeybindingsConfig, [
       { key: "mod+j", command: "terminal.toggle" },
       { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
+      { key: "mod+shift+d", command: "terminal.splitHorizontal", when: "terminalFocus" },
     ]);
-    assert.lengthOf(parsed, 2);
+    assert.lengthOf(parsed, 3);
   }),
 );
 

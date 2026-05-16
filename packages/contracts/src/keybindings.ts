@@ -51,6 +51,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.toggle",
   "terminal.togglePlacement",
   "terminal.split",
+  "terminal.splitHorizontal",
   "terminal.new",
   "terminal.close",
   "terminal.tabPrevious",

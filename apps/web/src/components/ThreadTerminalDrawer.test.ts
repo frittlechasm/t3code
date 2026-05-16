@@ -144,7 +144,11 @@ describe("resolveThreadTerminalDrawerLayout", () => {
       activeTerminalId: "terminal-2",
       activeTerminalGroupId: "group-default",
       terminalGroups: [
-        { id: "group-default", terminalIds: ["default", "terminal-2"] },
+        {
+          id: "group-default",
+          terminalIds: ["default", "terminal-2"],
+          splitOrientation: "horizontal",
+        },
         { id: "group-terminal-3", terminalIds: ["terminal-3"] },
       ],
     });
@@ -152,6 +156,14 @@ describe("resolveThreadTerminalDrawerLayout", () => {
     expect(layout.activeTerminalId).toBe("terminal-2");
     expect(layout.activeGroupIndex).toBe(0);
     expect(layout.visibleTerminalIds).toEqual(["default", "terminal-2"]);
+    expect(layout.visibleSplitLayout).toEqual({
+      type: "split",
+      orientation: "horizontal",
+      children: [
+        { type: "terminal", terminalId: "default" },
+        { type: "terminal", terminalId: "terminal-2" },
+      ],
+    });
     expect(layout.terminalLabelById.get("terminal-3")).toBe("Terminal 3");
     expect(layout.tabs).toEqual([
       {
@@ -184,6 +196,7 @@ describe("resolveThreadTerminalDrawerLayout", () => {
     expect(layout.terminalIds).toEqual(["default"]);
     expect(layout.activeTerminalId).toBe("default");
     expect(layout.visibleTerminalIds).toEqual(["default"]);
+    expect(layout.visibleSplitLayout).toBeUndefined();
     expect(layout.showTerminalTabs).toBe(false);
     expect(layout.tabs).toEqual([
       {
