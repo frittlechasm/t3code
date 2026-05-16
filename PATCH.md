@@ -174,6 +174,7 @@ Base used for this summary: `upstream/main` at merge-base `447236d51f4d6835482f6
 - Route search parsing tests for `panel=diff`, ignored `panel=tasks`, and legacy `diff=1`.
 - Assertions that task route state does not make the diff panel appear open.
 - Keybinding contract/default updates for `taskWindow.toggle`.
+
 ## Terminal Tab Navigation
 
 ### Branch Scope

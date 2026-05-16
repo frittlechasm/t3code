@@ -38,6 +38,7 @@ import {
 } from "lexical";
 import {
   createContext,
+  type KeyboardEventHandler,
   use,
   useCallback,
   useEffect,

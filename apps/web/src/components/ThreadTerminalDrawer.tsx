@@ -19,10 +19,7 @@ import {
   type TerminalViewMode,
   type ThreadId,
 } from "@t3tools/contracts";
-import {
-  DEFAULT_TERMINAL_FONT_FAMILY,
-  type TerminalPlacement,
-} from "@t3tools/contracts/settings";
+import { DEFAULT_TERMINAL_FONT_FAMILY, type TerminalPlacement } from "@t3tools/contracts/settings";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import {
   type PointerEvent as ReactPointerEvent,
