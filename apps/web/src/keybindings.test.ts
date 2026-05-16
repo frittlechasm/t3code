@@ -1009,48 +1009,43 @@ describe("terminal tab jump shortcuts", () => {
 
   it("resolves Mod+1 to tab jump index 0 when terminalFocus is true", () => {
     assert.strictEqual(
-      resolveTerminalTabJumpIndex(
-        event({ key: "1", metaKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "MacIntel", context: { terminalFocus: true } },
-      ),
+      resolveTerminalTabJumpIndex(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
       0,
     );
     assert.strictEqual(
-      resolveTerminalTabJumpIndex(
-        event({ key: "3", ctrlKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "Linux", context: { terminalFocus: true } },
-      ),
+      resolveTerminalTabJumpIndex(event({ key: "3", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
       2,
     );
   });
 
   it("returns null when terminalFocus is false", () => {
     assert.isNull(
-      resolveTerminalTabJumpIndex(
-        event({ key: "1", metaKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "MacIntel", context: { terminalFocus: false } },
-      ),
+      resolveTerminalTabJumpIndex(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
     );
   });
 
   it("Mod+1 resolves to terminal.tab.1 (not thread.jump.1) when terminalFocus is true", () => {
     assert.strictEqual(
-      resolveShortcutCommand(
-        event({ key: "1", metaKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "MacIntel", context: { terminalFocus: true } },
-      ),
+      resolveShortcutCommand(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
       "terminal.tab.1",
     );
     assert.strictEqual(
-      resolveShortcutCommand(
-        event({ key: "1", metaKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "MacIntel", context: { terminalFocus: false } },
-      ),
+      resolveShortcutCommand(event({ key: "1", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
       "thread.jump.1",
     );
   });
