@@ -2924,8 +2924,8 @@ export default function Sidebar() {
     return next;
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
   const getCurrentSidebarShortcutContext = useCallback(
-    () => ({
-      terminalFocus: isTerminalFocused(),
+    (target?: EventTarget | null) => ({
+      terminalFocus: isTerminalFocused(target),
       terminalOpen: routeThreadRef
         ? selectThreadTerminalState(
             useTerminalStateStore.getState().terminalStateByThreadKey,
@@ -3197,7 +3197,7 @@ export default function Sidebar() {
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      const shortcutContext = getCurrentSidebarShortcutContext();
+      const shortcutContext = getCurrentSidebarShortcutContext(event.target);
 
       if (event.defaultPrevented || event.repeat) {
         return;

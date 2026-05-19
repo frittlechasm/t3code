@@ -59,6 +59,10 @@ export type TerminalShortcutAction =
   | "tabPrevious"
   | "tabNext"
   | "splitFocusNext"
+  | "splitFocusLeft"
+  | "splitFocusDown"
+  | "splitFocusUp"
+  | "splitFocusRight"
   | "pinDrawer";
 
 const TERMINAL_WORD_BACKWARD = "\u001bb";
@@ -549,6 +553,14 @@ export function terminalShortcutActionFromCommand(
       return "tabNext";
     case "terminal.splitFocusNext":
       return "splitFocusNext";
+    case "terminal.splitFocusLeft":
+      return "splitFocusLeft";
+    case "terminal.splitFocusDown":
+      return "splitFocusDown";
+    case "terminal.splitFocusUp":
+      return "splitFocusUp";
+    case "terminal.splitFocusRight":
+      return "splitFocusRight";
     case "terminal.pinDrawer":
       return "pinDrawer";
     default:

@@ -53,4 +53,15 @@ describe("isTerminalFocused", () => {
 
     expect(isTerminalFocused()).toBe(true);
   });
+
+  it("treats a connected terminal event target as focused even when activeElement is stale", () => {
+    const terminalTarget = new MockHTMLElement();
+    terminalTarget.isConnected = true;
+    const staleActiveElement = new MockHTMLElement();
+
+    globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
+    globalThis.document = { activeElement: staleActiveElement } as Document;
+
+    expect(isTerminalFocused(terminalTarget as unknown as EventTarget)).toBe(true);
+  });
 });

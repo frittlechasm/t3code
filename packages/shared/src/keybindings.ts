@@ -20,7 +20,7 @@ type WhenToken =
   | { type: "rparen" };
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  { key: "mod+j", command: "terminal.toggle" },
+  { key: "ctrl+`", command: "terminal.toggle" },
   { key: "mod+shift+j", command: "terminal.togglePlacement" },
   { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
   { key: "mod+shift+d", command: "terminal.splitHorizontal", when: "terminalFocus" },
@@ -39,6 +39,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+[", command: "terminal.tabPrevious", when: "terminalFocus" },
   { key: "mod+]", command: "terminal.tabNext", when: "terminalFocus" },
   { key: "mod+\\", command: "terminal.splitFocusNext", when: "terminalFocus" },
+  { key: "mod+arrowleft", command: "terminal.splitFocusLeft", when: "terminalFocus" },
+  { key: "mod+arrowdown", command: "terminal.splitFocusDown", when: "terminalFocus" },
+  { key: "mod+arrowup", command: "terminal.splitFocusUp", when: "terminalFocus" },
+  { key: "mod+arrowright", command: "terminal.splitFocusRight", when: "terminalFocus" },
   { key: "mod+shift+p", command: "terminal.pinDrawer", when: "terminalFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,

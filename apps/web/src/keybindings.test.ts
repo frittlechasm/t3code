@@ -94,7 +94,17 @@ function compile(bindings: TestBinding[]): ResolvedKeybindingsConfig {
 }
 
 const DEFAULT_BINDINGS = compile([
-  { shortcut: modShortcut("j"), command: "terminal.toggle" },
+  {
+    shortcut: {
+      key: "`",
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    },
+    command: "terminal.toggle",
+  },
   { shortcut: modShortcut("j", { shiftKey: true }), command: "terminal.togglePlacement" },
   {
     shortcut: modShortcut("d"),
@@ -147,6 +157,31 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenIdentifier("terminalFocus"),
   },
   {
+    shortcut: modShortcut("\\"),
+    command: "terminal.splitFocusNext",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("arrowleft"),
+    command: "terminal.splitFocusLeft",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("arrowdown"),
+    command: "terminal.splitFocusDown",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("arrowup"),
+    command: "terminal.splitFocusUp",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
+    shortcut: modShortcut("arrowright"),
+    command: "terminal.splitFocusRight",
+    whenAst: whenIdentifier("terminalFocus"),
+  },
+  {
     shortcut: modShortcut("p", { shiftKey: true }),
     command: "terminal.pinDrawer",
     whenAst: whenIdentifier("terminalFocus"),
@@ -187,23 +222,31 @@ const DEFAULT_BINDINGS = compile([
 ]);
 
 describe("isTerminalToggleShortcut", () => {
-  it("matches Cmd+J on macOS", () => {
+  it("matches Ctrl+` on macOS", () => {
     assert.isTrue(
-      isTerminalToggleShortcut(event({ metaKey: true }), DEFAULT_BINDINGS, {
+      isTerminalToggleShortcut(event({ key: "`", ctrlKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
       }),
     );
   });
 
-  it("matches Ctrl+J on non-macOS", () => {
+  it("matches Ctrl+` on non-macOS", () => {
     assert.isTrue(
-      isTerminalToggleShortcut(event({ ctrlKey: true }), DEFAULT_BINDINGS, { platform: "Win32" }),
+      isTerminalToggleShortcut(event({ key: "`", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Win32",
+      }),
     );
   });
 
-  it("matches Ctrl+J on non-macOS while terminalFocus is true", () => {
-    assert.isTrue(
+  it("leaves Ctrl+J unclaimed by terminal toggle on non-macOS", () => {
+    assert.isFalse(
       isTerminalToggleShortcut(event({ ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: true },
+      }),
+    );
+    assert.isNull(
+      resolveTerminalShortcutAction(event({ ctrlKey: true }), DEFAULT_BINDINGS, {
         platform: "Win32",
         context: { terminalFocus: true },
       }),
@@ -509,6 +552,20 @@ describe("shortcutLabelForCommand", () => {
         context: { terminalFocus: true },
       }),
       "⇧⌘P",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.splitFocusLeft", {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "⌘Left",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.splitFocusDown", {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "Ctrl+Down",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "terminal.pinDrawer", {
@@ -844,6 +901,71 @@ describe("terminalShortcutActionFromCommand", () => {
 
   it("maps terminal.pinDrawer to the pinDrawer action", () => {
     assert.strictEqual(terminalShortcutActionFromCommand("terminal.pinDrawer"), "pinDrawer");
+  });
+
+  it("maps directional split focus actions", () => {
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.splitFocusLeft"),
+      "splitFocusLeft",
+    );
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.splitFocusDown"),
+      "splitFocusDown",
+    );
+    assert.strictEqual(terminalShortcutActionFromCommand("terminal.splitFocusUp"), "splitFocusUp");
+    assert.strictEqual(
+      terminalShortcutActionFromCommand("terminal.splitFocusRight"),
+      "splitFocusRight",
+    );
+  });
+});
+
+describe("directional split focus shortcuts", () => {
+  it("resolves Mod+Arrow shortcuts while terminalFocus is true", () => {
+    assert.strictEqual(
+      resolveTerminalShortcutAction(event({ key: "ArrowLeft", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "splitFocusLeft",
+    );
+    assert.strictEqual(
+      resolveTerminalShortcutAction(event({ key: "ArrowDown", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "splitFocusDown",
+    );
+    assert.strictEqual(
+      resolveTerminalShortcutAction(event({ key: "ArrowUp", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "splitFocusUp",
+    );
+    assert.strictEqual(
+      resolveTerminalShortcutAction(event({ key: "ArrowRight", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+      "splitFocusRight",
+    );
+  });
+
+  it("does not resolve directional pane focus outside terminalFocus", () => {
+    assert.isNull(
+      resolveTerminalShortcutAction(event({ key: "ArrowLeft", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "ArrowDown", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      null,
+    );
   });
 });
 

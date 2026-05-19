@@ -42,7 +42,7 @@ describe("KeybindingsSettings.logic", () => {
         command: "terminal.toggle",
         key: "mod+j",
         when: "!terminalFocus",
-        defaultKey: "mod+j",
+        defaultKey: "ctrl+`",
         defaultWhen: "",
         source: "Custom",
       }),

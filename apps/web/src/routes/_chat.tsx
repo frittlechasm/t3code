@@ -33,7 +33,7 @@ function ChatRouteGlobalShortcuts() {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event.target),
           terminalOpen,
         },
       });

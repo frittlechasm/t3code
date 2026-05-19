@@ -114,7 +114,12 @@ import {
   terminalShortcutActionFromCommand,
 } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
+import ThreadTerminalDrawer, {
+  createTerminalSplitLayoutFromTerminalIds,
+  resolveTerminalSplitFocusTarget,
+  terminalSplitFocusDirectionFromAction,
+  type TerminalSplitFocusDirection,
+} from "./ThreadTerminalDrawer";
 import { ChevronDownIcon, TriangleAlertIcon, WifiOffIcon } from "lucide-react";
 import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -2226,6 +2231,51 @@ export default function ChatView(props: ChatViewProps) {
     storeSetActivePinnedTerminal,
     storeSetActiveTerminal,
   ]);
+  const focusSplitDirection = useCallback(
+    (direction: TerminalSplitFocusDirection) => {
+      if (!activeThreadRef || !activeTerminalState.terminalOpen) return;
+      const activeGroup = activeTerminalState.terminalGroups.find(
+        (g) =>
+          g.id === activeTerminalState.activeTerminalGroupId ||
+          g.terminalIds.includes(activeTerminalState.activeTerminalId),
+      );
+      if (!activeGroup || activeGroup.terminalIds.length <= 1) return;
+      const splitLayout =
+        activeGroup.splitLayout ??
+        createTerminalSplitLayoutFromTerminalIds(
+          activeGroup.terminalIds,
+          activeGroup.splitOrientation ?? "vertical",
+        );
+      const nextTerminalId = resolveTerminalSplitFocusTarget(
+        splitLayout,
+        activeTerminalState.activeTerminalId,
+        direction,
+      );
+      if (!nextTerminalId) return;
+      if (isActiveTerminalDrawerPinned && activeLogicalProjectKey) {
+        storeSetActivePinnedTerminal(
+          activeLogicalProjectKey,
+          activeThreadRef.environmentId,
+          nextTerminalId,
+        );
+        setTerminalFocusRequestId((value) => value + 1);
+        return;
+      }
+      storeSetActiveTerminal(activeThreadRef, nextTerminalId);
+      setTerminalFocusRequestId((value) => value + 1);
+    },
+    [
+      activeLogicalProjectKey,
+      activeTerminalState.activeTerminalGroupId,
+      activeTerminalState.activeTerminalId,
+      activeTerminalState.terminalGroups,
+      activeTerminalState.terminalOpen,
+      activeThreadRef,
+      isActiveTerminalDrawerPinned,
+      storeSetActivePinnedTerminal,
+      storeSetActiveTerminal,
+    ],
+  );
   const closeTerminal = useCallback(
     (terminalId: string) => {
       if (
@@ -2897,7 +2947,7 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     const shortcutContext = {
-      terminalFocus: isTerminalFocused(),
+      terminalFocus: isTerminalFocused(event.target),
       terminalOpen: Boolean(activeTerminalState.terminalOpen),
       modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
     };
@@ -2980,6 +3030,21 @@ export default function ChatView(props: ChatViewProps) {
       event.preventDefault();
       event.stopPropagation();
       cycleSplitFocus();
+      return;
+    }
+
+    if (
+      terminalAction === "splitFocusLeft" ||
+      terminalAction === "splitFocusDown" ||
+      terminalAction === "splitFocusUp" ||
+      terminalAction === "splitFocusRight"
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = terminalSplitFocusDirectionFromAction(terminalAction);
+      if (direction !== null) {
+        focusSplitDirection(direction);
+      }
       return;
     }
 

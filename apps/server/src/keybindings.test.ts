@@ -204,6 +204,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.equal(defaultsByCommand.get("thread.next"), "mod+shift+]");
       assert.equal(defaultsByCommand.get("thread.jump.1"), "mod+1");
       assert.equal(defaultsByCommand.get("thread.jump.9"), "mod+9");
+      assert.equal(defaultsByCommand.get("terminal.toggle"), "ctrl+`");
       assert.equal(defaultsByCommand.get("terminal.togglePlacement"), "mod+shift+j");
       assert.equal(defaultsByCommand.get("terminal.splitHorizontal"), "mod+shift+d");
       assert.equal(defaultsByCommand.get("modelPicker.toggle"), "mod+shift+m");
@@ -297,7 +298,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           ),
         );
         assert.isTrue(
-          persisted.some((entry) => entry.command === "terminal.toggle" && entry.key === "mod+j"),
+          persisted.some((entry) => entry.command === "terminal.toggle" && entry.key === "ctrl+`"),
         );
 
         for (const defaultRule of DEFAULT_KEYBINDINGS) {
@@ -340,9 +341,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         resolved.some(
           (entry) =>
             entry.command === "terminal.toggle" &&
-            entry.shortcut.modKey &&
+            entry.shortcut.ctrlKey &&
             !entry.shortcut.shiftKey &&
-            entry.shortcut.key === "j",
+            entry.shortcut.key === "`",
         ),
       );
     }).pipe(Effect.provide(makeKeybindingsLayer())),
@@ -357,7 +358,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     return Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+j", command: "script.custom-action.run" },
+        { key: "ctrl+`", command: "script.custom-action.run" },
       ]);
 
       yield* Effect.gen(function* () {

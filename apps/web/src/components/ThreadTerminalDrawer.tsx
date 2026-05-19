@@ -79,6 +79,25 @@ const MIN_DRAWER_WIDTH = 280;
 const MAX_DRAWER_WIDTH_RATIO = 0.6;
 const MULTI_CLICK_SELECTION_ACTION_DELAY_MS = 260;
 
+export type TerminalSplitFocusDirection = "left" | "down" | "up" | "right";
+
+export function terminalSplitFocusDirectionFromAction(
+  action: string,
+): TerminalSplitFocusDirection | null {
+  switch (action) {
+    case "splitFocusLeft":
+      return "left";
+    case "splitFocusDown":
+      return "down";
+    case "splitFocusUp":
+      return "up";
+    case "splitFocusRight":
+      return "right";
+    default:
+      return null;
+  }
+}
+
 function maxDrawerHeight(): number {
   if (typeof window === "undefined") return DEFAULT_THREAD_TERMINAL_HEIGHT;
   return Math.max(MIN_DRAWER_HEIGHT, Math.floor(window.innerHeight * MAX_DRAWER_HEIGHT_RATIO));
@@ -303,6 +322,7 @@ interface TerminalViewportProps {
   onCycleTerminalTabShortcut: (direction: "previous" | "next") => void;
   onTabJumpShortcut: (index: number) => void;
   onSplitFocusNextShortcut: () => void;
+  onSplitFocusDirectionShortcut: (direction: TerminalSplitFocusDirection) => void;
   onPinDrawerShortcut: () => void;
   focusRequestId: number;
   autoFocus: boolean;
@@ -327,6 +347,7 @@ export function TerminalViewport({
   onCycleTerminalTabShortcut,
   onTabJumpShortcut,
   onSplitFocusNextShortcut,
+  onSplitFocusDirectionShortcut,
   onPinDrawerShortcut,
   focusRequestId,
   autoFocus,
@@ -370,6 +391,11 @@ export function TerminalViewport({
   const handleSplitFocusNextShortcut = useEffectEvent(() => {
     onSplitFocusNextShortcut();
   });
+  const handleSplitFocusDirectionShortcut = useEffectEvent(
+    (direction: TerminalSplitFocusDirection) => {
+      onSplitFocusDirectionShortcut(direction);
+    },
+  );
   const handlePinDrawerShortcut = useEffectEvent(() => {
     onPinDrawerShortcut();
   });
@@ -524,6 +550,15 @@ export function TerminalViewport({
           event.preventDefault();
           event.stopPropagation();
           handleSplitFocusNextShortcut();
+        }
+        return false;
+      }
+      const splitFocusDirection = terminalSplitFocusDirectionFromAction(terminalAction ?? "");
+      if (splitFocusDirection !== null) {
+        if (!event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSplitFocusDirectionShortcut(splitFocusDirection);
         }
         return false;
       }
@@ -978,7 +1013,7 @@ interface ThreadTerminalDrawerLayout {
   hasReachedSplitLimit: boolean;
 }
 
-function createTerminalSplitLayoutFromTerminalIds(
+export function createTerminalSplitLayoutFromTerminalIds(
   terminalIds: string[],
   orientation: TerminalSplitOrientation = "vertical",
 ): TerminalSplitLayout | undefined {
@@ -995,6 +1030,119 @@ function createTerminalSplitLayoutFromTerminalIds(
 function collectTerminalIdsFromSplitLayout(layout: TerminalSplitLayout): string[] {
   if (layout.type === "terminal") return [layout.terminalId];
   return layout.children.flatMap(collectTerminalIdsFromSplitLayout);
+}
+
+interface TerminalSplitFocusRect {
+  terminalId: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+}
+
+function collectTerminalSplitFocusRects(
+  layout: TerminalSplitLayout,
+  bounds = { left: 0, top: 0, right: 1, bottom: 1 },
+): TerminalSplitFocusRect[] {
+  if (layout.type === "terminal") {
+    return [
+      {
+        terminalId: layout.terminalId,
+        ...bounds,
+        centerX: (bounds.left + bounds.right) / 2,
+        centerY: (bounds.top + bounds.bottom) / 2,
+      },
+    ];
+  }
+
+  const childCount = layout.children.length;
+  if (childCount === 0) return [];
+  const isHorizontal = layout.orientation === "horizontal";
+  const span = isHorizontal
+    ? (bounds.bottom - bounds.top) / childCount
+    : (bounds.right - bounds.left) / childCount;
+
+  return layout.children.flatMap((child, index) => {
+    const childBounds = isHorizontal
+      ? {
+          left: bounds.left,
+          right: bounds.right,
+          top: bounds.top + span * index,
+          bottom: bounds.top + span * (index + 1),
+        }
+      : {
+          left: bounds.left + span * index,
+          right: bounds.left + span * (index + 1),
+          top: bounds.top,
+          bottom: bounds.bottom,
+        };
+    return collectTerminalSplitFocusRects(child, childBounds);
+  });
+}
+
+function splitFocusPrimaryDistance(
+  current: TerminalSplitFocusRect,
+  candidate: TerminalSplitFocusRect,
+  direction: TerminalSplitFocusDirection,
+): number | null {
+  switch (direction) {
+    case "left":
+      return candidate.centerX < current.centerX
+        ? Math.max(0, current.left - candidate.right)
+        : null;
+    case "right":
+      return candidate.centerX > current.centerX
+        ? Math.max(0, candidate.left - current.right)
+        : null;
+    case "up":
+      return candidate.centerY < current.centerY
+        ? Math.max(0, current.top - candidate.bottom)
+        : null;
+    case "down":
+      return candidate.centerY > current.centerY
+        ? Math.max(0, candidate.top - current.bottom)
+        : null;
+  }
+}
+
+function splitFocusSecondaryDistance(
+  current: TerminalSplitFocusRect,
+  candidate: TerminalSplitFocusRect,
+  direction: TerminalSplitFocusDirection,
+): number {
+  return direction === "left" || direction === "right"
+    ? Math.abs(current.centerY - candidate.centerY)
+    : Math.abs(current.centerX - candidate.centerX);
+}
+
+export function resolveTerminalSplitFocusTarget(
+  layout: TerminalSplitLayout | undefined,
+  activeTerminalId: string,
+  direction: TerminalSplitFocusDirection,
+): string | null {
+  if (!layout) return null;
+  const rects = collectTerminalSplitFocusRects(layout);
+  const current = rects.find((rect) => rect.terminalId === activeTerminalId);
+  if (!current) return null;
+
+  let best: { terminalId: string; primary: number; secondary: number } | null = null;
+  for (const candidate of rects) {
+    if (candidate.terminalId === activeTerminalId) continue;
+    const primary = splitFocusPrimaryDistance(current, candidate, direction);
+    if (primary === null) continue;
+    const secondary = splitFocusSecondaryDistance(current, candidate, direction);
+    if (
+      !best ||
+      primary < best.primary ||
+      (primary === best.primary && secondary < best.secondary)
+    ) {
+      best = { terminalId: candidate.terminalId, primary, secondary };
+    }
+  }
+
+  return best?.terminalId ?? null;
 }
 
 export function resolveThreadTerminalDrawerLayout(options: {
@@ -1121,6 +1269,7 @@ interface TerminalSplitLayoutViewProps {
   onCycleTerminalTabAction: (direction: "previous" | "next") => void;
   onTabJumpAction: (index: number) => void;
   onSplitFocusNextAction: () => void;
+  onSplitFocusDirectionAction: (direction: TerminalSplitFocusDirection) => void;
   onPinDrawerAction: () => void;
   focusRequestId: number;
   resizeEpoch: number;
@@ -1156,6 +1305,7 @@ function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
           onCycleTerminalTabShortcut={props.onCycleTerminalTabAction}
           onTabJumpShortcut={props.onTabJumpAction}
           onSplitFocusNextShortcut={props.onSplitFocusNextAction}
+          onSplitFocusDirectionShortcut={props.onSplitFocusDirectionAction}
           onPinDrawerShortcut={props.onPinDrawerAction}
           focusRequestId={props.focusRequestId}
           autoFocus={terminalId === props.activeTerminalId}
@@ -1347,6 +1497,19 @@ export default function ThreadTerminalDrawer({
       onActiveTerminalChange(nextTerminalId);
     }
   }, [onActiveTerminalChange, resolvedActiveTerminalId, visibleTerminalIds]);
+  const onSplitFocusDirectionAction = useCallback(
+    (direction: TerminalSplitFocusDirection) => {
+      const nextTerminalId = resolveTerminalSplitFocusTarget(
+        visibleSplitLayout,
+        resolvedActiveTerminalId,
+        direction,
+      );
+      if (nextTerminalId) {
+        onActiveTerminalChange(nextTerminalId);
+      }
+    },
+    [onActiveTerminalChange, resolvedActiveTerminalId, visibleSplitLayout],
+  );
 
   useEffect(() => {
     onHeightChangeRef.current = onHeightChange;
@@ -1729,6 +1892,7 @@ export default function ThreadTerminalDrawer({
                 onCycleTerminalTabAction={onCycleTerminalTabAction}
                 onTabJumpAction={onTerminalTabJumpAction}
                 onSplitFocusNextAction={onSplitFocusNextAction}
+                onSplitFocusDirectionAction={onSplitFocusDirectionAction}
                 onPinDrawerAction={onPinButtonClick}
                 focusRequestId={focusRequestId}
                 resizeEpoch={resizeEpoch}
@@ -1754,6 +1918,7 @@ export default function ThreadTerminalDrawer({
                   onCycleTerminalTabShortcut={onCycleTerminalTabAction}
                   onTabJumpShortcut={onTerminalTabJumpAction}
                   onSplitFocusNextShortcut={onSplitFocusNextAction}
+                  onSplitFocusDirectionShortcut={onSplitFocusDirectionAction}
                   onPinDrawerShortcut={onPinButtonClick}
                   focusRequestId={focusRequestId}
                   autoFocus

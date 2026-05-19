@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  resolveTerminalSplitFocusTarget,
   resolveTerminalSelectionActionPosition,
   resolveThreadTerminalDrawerLayout,
   selectPendingTerminalEventEntries,
@@ -207,5 +208,36 @@ describe("resolveThreadTerminalDrawerLayout", () => {
         active: true,
       },
     ]);
+  });
+});
+
+describe("resolveTerminalSplitFocusTarget", () => {
+  const mixedLayout = {
+    type: "split" as const,
+    orientation: "vertical" as const,
+    children: [
+      {
+        type: "split" as const,
+        orientation: "horizontal" as const,
+        children: [
+          { type: "terminal" as const, terminalId: "left-top" },
+          { type: "terminal" as const, terminalId: "left-bottom" },
+        ],
+      },
+      { type: "terminal" as const, terminalId: "right" },
+    ],
+  };
+
+  it("moves focus according to visual split geometry", () => {
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-top", "down")).toBe("left-bottom");
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-bottom", "up")).toBe("left-top");
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-top", "right")).toBe("right");
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "right", "left")).toBe("left-top");
+  });
+
+  it("returns null when no pane exists in that direction", () => {
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-top", "up")).toBeNull();
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "right", "right")).toBeNull();
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "missing", "left")).toBeNull();
   });
 });
