@@ -3,11 +3,14 @@ import {
   AuthSessionId,
   AuthStandardClientScopes,
 } from "@t3tools/contracts";
+import type * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NetService from "@t3tools/shared/Net";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
+import type * as Scope from "effect/Scope";
 import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -240,7 +243,9 @@ const sessionCommand = Command.make("session").pipe(
   Command.withSubcommands([sessionIssueCommand, sessionListCommand, sessionRevokeCommand]),
 );
 
+type AuthCommandServices = NetService.NetService | NodeServices.NodeServices | Scope.Scope;
+
 export const authCommand = Command.make("auth").pipe(
   Command.withDescription("Manage the local auth control plane for headless deployments."),
   Command.withSubcommands([pairingCommand, sessionCommand]),
-);
+) as unknown as Command.Command<"auth", {}, {}, unknown, AuthCommandServices>;

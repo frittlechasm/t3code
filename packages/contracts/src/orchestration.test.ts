@@ -342,6 +342,24 @@ it.effect("decodes thread archive and unarchive commands", () =>
   }),
 );
 
+it.effect("decodes thread recheck marker commands", () =>
+  Effect.gen(function* () {
+    const mark = yield* decodeOrchestrationCommand({
+      type: "thread.recheck.mark",
+      commandId: "cmd-recheck-mark-1",
+      threadId: "thread-1",
+    });
+    const clear = yield* decodeOrchestrationCommand({
+      type: "thread.recheck.clear",
+      commandId: "cmd-recheck-clear-1",
+      threadId: "thread-1",
+    });
+
+    assert.strictEqual(mark.type, "thread.recheck.mark");
+    assert.strictEqual(clear.type, "thread.recheck.clear");
+  }),
+);
+
 it.effect("decodes thread archived and unarchived events", () =>
   Effect.gen(function* () {
     const archived = yield* decodeOrchestrationEvent({
@@ -383,6 +401,48 @@ it.effect("decodes thread archived and unarchived events", () =>
     }
     assert.strictEqual(archived.payload.archivedAt, "2026-01-01T00:00:00.000Z");
     assert.strictEqual(unarchived.type, "thread.unarchived");
+  }),
+);
+
+it.effect("decodes thread recheck marker events", () =>
+  Effect.gen(function* () {
+    const marked = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "event-recheck-mark-1",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      type: "thread.recheck-marked",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-recheck-mark-1",
+      causationEventId: null,
+      correlationId: "cmd-recheck-mark-1",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        recheckRequestedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const cleared = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "event-recheck-clear-1",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      type: "thread.recheck-cleared",
+      occurredAt: "2026-01-02T00:00:00.000Z",
+      commandId: "cmd-recheck-clear-1",
+      causationEventId: null,
+      correlationId: "cmd-recheck-clear-1",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    });
+
+    assert.strictEqual(marked.type, "thread.recheck-marked");
+    assert.strictEqual(marked.payload.recheckRequestedAt, "2026-01-01T00:00:00.000Z");
+    assert.strictEqual(cleared.type, "thread.recheck-cleared");
   }),
 );
 

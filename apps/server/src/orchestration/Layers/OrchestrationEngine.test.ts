@@ -146,6 +146,7 @@ describe("OrchestrationEngine", () => {
           createdAt: "2026-03-03T00:00:02.000Z",
           updatedAt: "2026-03-03T00:00:03.000Z",
           archivedAt: null,
+          recheckRequestedAt: null,
           deletedAt: null,
           messages: [],
           proposedPlans: [],
@@ -332,6 +333,18 @@ describe("OrchestrationEngine", () => {
 
     await system.run(
       engine.dispatch({
+        type: "thread.recheck.mark",
+        commandId: CommandId.make("cmd-thread-recheck-mark"),
+        threadId: ThreadId.make("thread-archive"),
+      }),
+    );
+    const markedRecheckAt = (await system.readModel()).threads.find(
+      (thread) => thread.id === "thread-archive",
+    )?.recheckRequestedAt;
+    expect(markedRecheckAt).not.toBeNull();
+
+    await system.run(
+      engine.dispatch({
         type: "thread.archive",
         commandId: CommandId.make("cmd-thread-archive"),
         threadId: ThreadId.make("thread-archive"),
@@ -341,6 +354,10 @@ describe("OrchestrationEngine", () => {
       (await system.readModel()).threads.find((thread) => thread.id === "thread-archive")
         ?.archivedAt,
     ).not.toBeNull();
+    expect(
+      (await system.readModel()).threads.find((thread) => thread.id === "thread-archive")
+        ?.recheckRequestedAt,
+    ).toBe(markedRecheckAt);
 
     await system.run(
       engine.dispatch({
@@ -352,6 +369,22 @@ describe("OrchestrationEngine", () => {
     expect(
       (await system.readModel()).threads.find((thread) => thread.id === "thread-archive")
         ?.archivedAt,
+    ).toBeNull();
+    expect(
+      (await system.readModel()).threads.find((thread) => thread.id === "thread-archive")
+        ?.recheckRequestedAt,
+    ).toBe(markedRecheckAt);
+
+    await system.run(
+      engine.dispatch({
+        type: "thread.recheck.clear",
+        commandId: CommandId.make("cmd-thread-recheck-clear"),
+        threadId: ThreadId.make("thread-archive"),
+      }),
+    );
+    expect(
+      (await system.readModel()).threads.find((thread) => thread.id === "thread-archive")
+        ?.recheckRequestedAt,
     ).toBeNull();
 
     await system.dispose();

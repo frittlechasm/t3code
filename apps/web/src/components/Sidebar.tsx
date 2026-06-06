@@ -3,6 +3,7 @@ import {
   ArrowUpDownIcon,
   ChevronRightIcon,
   CloudIcon,
+  FlagIcon,
   FolderPlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -607,6 +608,22 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {thread.recheckRequestedAt && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    role="img"
+                    aria-label="Needs recheck"
+                    className="inline-flex h-5 items-center justify-center text-amber-600 dark:text-amber-400"
+                  />
+                }
+              >
+                <FlagIcon className="block size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Needs recheck</TooltipPopup>
+            </Tooltip>
+          )}
           {terminalStatus && (
             <span
               role="img"
@@ -899,6 +916,8 @@ interface SidebarProjectItemProps {
   newThreadShortcutLabel: string | null;
   handleNewThread: ReturnType<typeof useNewThreadHandler>["handleNewThread"];
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
+  markThreadForRecheck: ReturnType<typeof useThreadActions>["markThreadForRecheck"];
+  clearThreadRecheckMarker: ReturnType<typeof useThreadActions>["clearThreadRecheckMarker"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   threadJumpLabelByKey: ReadonlyMap<string, string>;
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
@@ -919,6 +938,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     newThreadShortcutLabel,
     handleNewThread,
     archiveThread,
+    markThreadForRecheck,
+    clearThreadRecheckMarker,
     deleteThread,
     threadJumpLabelByKey,
     attachThreadListAutoAnimateRef,
@@ -1605,6 +1626,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const clicked = await api.contextMenu.show(
         [
           { id: "mark-unread", label: `Mark unread (${count})` },
+          { id: "mark-recheck", label: `Flag Thread (${count})` },
+          { id: "clear-recheck", label: `Unflag Thread (${count})` },
           { id: "delete", label: `Delete (${count})`, destructive: true },
         ],
         position,
@@ -1614,6 +1637,21 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         for (const threadKey of threadKeys) {
           const thread = sidebarThreadByKeyRef.current.get(threadKey);
           markThreadUnread(threadKey, thread?.latestTurn?.completedAt);
+        }
+        clearSelection();
+        return;
+      }
+
+      if (clicked === "mark-recheck" || clicked === "clear-recheck") {
+        for (const threadKey of threadKeys) {
+          const thread = sidebarThreadByKeyRef.current.get(threadKey);
+          if (!thread) continue;
+          const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+          if (clicked === "mark-recheck") {
+            await markThreadForRecheck(threadRef);
+          } else {
+            await clearThreadRecheckMarker(threadRef);
+          }
         }
         clearSelection();
         return;
@@ -1643,8 +1681,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [
       appSettingsConfirmThreadDelete,
+      clearThreadRecheckMarker,
       clearSelection,
       deleteThread,
+      markThreadForRecheck,
       markThreadUnread,
       removeFromSelection,
     ],
@@ -1916,6 +1956,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
+          thread.recheckRequestedAt === null
+            ? { id: "mark-recheck", label: "Flag Thread" }
+            : { id: "clear-recheck", label: "Unflag Thread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true },
@@ -1932,6 +1975,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "mark-unread") {
         markThreadUnread(threadKey, thread.latestTurn?.completedAt);
+        return;
+      }
+      if (clicked === "mark-recheck") {
+        await markThreadForRecheck(threadRef);
+        return;
+      }
+      if (clicked === "clear-recheck") {
+        await clearThreadRecheckMarker(threadRef);
         return;
       }
       if (clicked === "copy-path") {
@@ -1968,9 +2019,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [
       appSettingsConfirmThreadDelete,
+      clearThreadRecheckMarker,
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
+      markThreadForRecheck,
       markThreadUnread,
       memberProjectByScopedKey,
       project.cwd,
@@ -2537,6 +2590,8 @@ interface SidebarProjectsContentProps {
   handleProjectDragCancel: (event: DragCancelEvent) => void;
   handleNewThread: ReturnType<typeof useNewThreadHandler>["handleNewThread"];
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
+  markThreadForRecheck: ReturnType<typeof useThreadActions>["markThreadForRecheck"];
+  clearThreadRecheckMarker: ReturnType<typeof useThreadActions>["clearThreadRecheckMarker"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
   expandedThreadListsByProject: ReadonlySet<string>;
@@ -2578,6 +2633,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleProjectDragCancel,
     handleNewThread,
     archiveThread,
+    markThreadForRecheck,
+    clearThreadRecheckMarker,
     deleteThread,
     sortedProjects,
     expandedThreadListsByProject,
@@ -2730,6 +2787,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         newThreadShortcutLabel={newThreadShortcutLabel}
                         handleNewThread={handleNewThread}
                         archiveThread={archiveThread}
+                        markThreadForRecheck={markThreadForRecheck}
+                        clearThreadRecheckMarker={clearThreadRecheckMarker}
                         deleteThread={deleteThread}
                         threadJumpLabelByKey={threadJumpLabelByKey}
                         attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
@@ -2762,6 +2821,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 newThreadShortcutLabel={newThreadShortcutLabel}
                 handleNewThread={handleNewThread}
                 archiveThread={archiveThread}
+                markThreadForRecheck={markThreadForRecheck}
+                clearThreadRecheckMarker={clearThreadRecheckMarker}
                 deleteThread={deleteThread}
                 threadJumpLabelByKey={threadJumpLabelByKey}
                 attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
@@ -2803,7 +2864,8 @@ export default function Sidebar() {
   const sidebarThreadPreviewCount = useSettings((s) => s.sidebarThreadPreviewCount);
   const { updateSettings } = useUpdateSettings();
   const { handleNewThread } = useNewThreadHandler();
-  const { archiveThread, deleteThread } = useThreadActions();
+  const { archiveThread, markThreadForRecheck, clearThreadRecheckMarker, deleteThread } =
+    useThreadActions();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeThreadRef = useParams({
     strict: false,
@@ -3441,6 +3503,8 @@ export default function Sidebar() {
             handleProjectDragCancel={handleProjectDragCancel}
             handleNewThread={handleNewThread}
             archiveThread={archiveThread}
+            markThreadForRecheck={markThreadForRecheck}
+            clearThreadRecheckMarker={clearThreadRecheckMarker}
             deleteThread={deleteThread}
             sortedProjects={sortedProjects}
             expandedThreadListsByProject={expandedThreadListsByProject}
