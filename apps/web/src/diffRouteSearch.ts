@@ -1,4 +1,5 @@
 import { TurnId } from "@t3tools/contracts";
+import { parseFileExplorerCommand, type FileExplorerCommand } from "./fileExplorerCommands";
 
 export type RightPanelRoutePanel = "diff" | "files";
 
@@ -7,6 +8,8 @@ export interface DiffRouteSearch {
   diff?: "1" | undefined;
   diffTurnId?: TurnId | undefined;
   diffFilePath?: string | undefined;
+  fileExplorerCommand?: FileExplorerCommand | undefined;
+  fileExplorerCommandId?: string | undefined;
 }
 
 function isDiffOpenValue(value: unknown): boolean {
@@ -27,15 +30,28 @@ function normalizePanel(value: unknown): RightPanelRoutePanel | undefined {
 
 export function stripDiffSearchParams<T extends Record<string, unknown>>(
   params: T,
-): Omit<T, "panel" | "diff" | "diffTurnId" | "diffFilePath"> {
+): Omit<
+  T,
+  "panel" | "diff" | "diffTurnId" | "diffFilePath" | "fileExplorerCommand" | "fileExplorerCommandId"
+> {
   const {
     panel: _panel,
     diff: _diff,
     diffTurnId: _diffTurnId,
     diffFilePath: _diffFilePath,
+    fileExplorerCommand: _fileExplorerCommand,
+    fileExplorerCommandId: _fileExplorerCommandId,
     ...rest
   } = params;
-  return rest as Omit<T, "panel" | "diff" | "diffTurnId" | "diffFilePath">;
+  return rest as Omit<
+    T,
+    | "panel"
+    | "diff"
+    | "diffTurnId"
+    | "diffFilePath"
+    | "fileExplorerCommand"
+    | "fileExplorerCommandId"
+  >;
 }
 
 export function isDiffPanelOpen(search: Pick<DiffRouteSearch, "panel" | "diff">): boolean {
@@ -55,11 +71,19 @@ export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRoute
   const diffTurnId = diffTurnIdRaw ? TurnId.make(diffTurnIdRaw) : undefined;
   const diffFilePath =
     diffOpen && diffTurnId ? normalizeSearchString(search.diffFilePath) : undefined;
+  const fileExplorerCommand =
+    panel === "files" ? parseFileExplorerCommand(search.fileExplorerCommand) : undefined;
+  const fileExplorerCommandId =
+    panel === "files" && fileExplorerCommand
+      ? normalizeSearchString(search.fileExplorerCommandId)
+      : undefined;
 
   return {
     ...(panel ? { panel } : {}),
     ...(diff ? { diff } : {}),
     ...(diffTurnId ? { diffTurnId } : {}),
     ...(diffFilePath ? { diffFilePath } : {}),
+    ...(fileExplorerCommand ? { fileExplorerCommand } : {}),
+    ...(fileExplorerCommandId ? { fileExplorerCommandId } : {}),
   };
 }

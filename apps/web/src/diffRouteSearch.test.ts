@@ -47,6 +47,30 @@ describe("parseDiffRouteSearch", () => {
     expect(getOpenRightPanel(parsed)).toBe("files");
   });
 
+  it("parses one-shot file explorer commands only for files panel state", () => {
+    expect(
+      parseDiffRouteSearch({
+        panel: "files",
+        fileExplorerCommand: "showTree",
+        fileExplorerCommandId: "command-1",
+      }),
+    ).toEqual({
+      panel: "files",
+      fileExplorerCommand: "showTree",
+      fileExplorerCommandId: "command-1",
+    });
+
+    expect(
+      parseDiffRouteSearch({
+        panel: "diff",
+        fileExplorerCommand: "toggleTree",
+        fileExplorerCommandId: "command-1",
+      }),
+    ).toEqual({
+      panel: "diff",
+    });
+  });
+
   it("treats numeric and boolean diff toggles as open", () => {
     expect(
       parseDiffRouteSearch({

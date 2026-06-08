@@ -3,7 +3,7 @@ import type { FileTreeSortEntry, GitStatusEntry } from "@pierre/trees";
 import { parsePatchFiles } from "@pierre/diffs";
 import { File, FileDiff, type FileContents, type FileDiffMetadata } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, useSearch } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { scopeProjectRef } from "@t3tools/client-runtime";
 import type {
   ProjectEntry,
@@ -35,6 +35,8 @@ import {
 import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorage";
 import { useSettings } from "~/hooks/useSettings";
 import { useComposerDraftStore } from "../composerDraftStore";
+import type { DiffRouteSearch } from "../diffRouteSearch";
+import type { FileExplorerCommand } from "../fileExplorerCommands";
 import {
   closeFileExplorerTab,
   fileExplorerTabDirectionFromShortcut,
@@ -56,7 +58,7 @@ import {
   resolveDiffThemeName,
 } from "~/lib/diffRendering";
 import { vcsFileDiffQueryOptions } from "~/lib/gitReactQuery";
-import { useGitStatus } from "~/lib/gitStatusState";
+import { useVcsStatus } from "~/lib/vcsStatusState";
 import {
   projectListEntriesQueryOptions,
   projectReadFileQueryOptions,
@@ -67,7 +69,12 @@ import { cn, isMacPlatform } from "../lib/utils";
 import { selectProjectByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolvePathLinkTarget } from "../terminal-links";
-import { resolveThreadRouteRef } from "../threadRoutes";
+import {
+  buildDraftThreadRouteParams,
+  buildThreadRouteParams,
+  resolveThreadRouteRef,
+  resolveThreadRouteTarget,
+} from "../threadRoutes";
 import { WINDOW_CLOSE_REQUEST_EVENT } from "../windowCloseRequests";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { Button } from "./ui/button";
@@ -425,16 +432,26 @@ function FilePreviewContent(props: {
 export default function FileExplorerPanel({ mode = "inline", onClose }: FileExplorerPanelProps) {
   const { resolvedTheme } = useTheme();
   const settings = useSettings();
-  const routeThreadRef = useParams({
+  const navigate = useNavigate();
+  const routeTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
+  const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
+  const routeDraftId = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
+  const threadRouteRef = useParams({
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
   });
   const activeThread = useStore(
-    useMemo(() => createThreadSelectorByRef(routeThreadRef), [routeThreadRef]),
+    useMemo(() => createThreadSelectorByRef(threadRouteRef), [threadRouteRef]),
   );
-  const draftThread = useComposerDraftStore((store) =>
-    routeThreadRef ? store.getDraftSessionByRef(routeThreadRef) : null,
-  );
+  const draftThread = useComposerDraftStore((store) => {
+    if (routeDraftId) {
+      return store.getDraftSession(routeDraftId);
+    }
+    return threadRouteRef ? store.getDraftSessionByRef(threadRouteRef) : null;
+  });
   const threadContext = activeThread ?? draftThread;
   const projectRef = threadContext
     ? scopeProjectRef(threadContext.environmentId, threadContext.projectId)
@@ -459,7 +476,7 @@ export default function FileExplorerPanel({ mode = "inline", onClose }: FileExpl
 
   const entriesQuery = useQuery(projectListEntriesQueryOptions({ environmentId, cwd: projectCwd }));
   const entries = entriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
-  const gitStatus = useGitStatus({ environmentId, cwd: projectCwd });
+  const gitStatus = useVcsStatus({ environmentId, cwd: projectCwd });
   const filePreviewQuery = useQuery(
     projectReadFileQueryOptions({
       environmentId,
@@ -586,7 +603,22 @@ export default function FileExplorerPanel({ mode = "inline", onClose }: FileExpl
     strict: false,
     select: (search) => (search as { panel?: string }).panel === "files",
   });
+  const fileExplorerRouteCommand = useSearch({
+    strict: false,
+    select: (search) => {
+      const command = (search as { fileExplorerCommand?: unknown }).fileExplorerCommand;
+      const commandId = (search as { fileExplorerCommandId?: unknown }).fileExplorerCommandId;
+      if (command !== "toggleTree" && command !== "showTree" && command !== "focusSearch") {
+        return null;
+      }
+      return {
+        command: command as FileExplorerCommand,
+        commandId: typeof commandId === "string" ? commandId : "",
+      };
+    },
+  });
   const previousFilesPanelOpenRef = useRef(false);
+  const consumedRouteCommandIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (isFilesPanelOpen && !previousFilesPanelOpenRef.current) {
@@ -765,6 +797,66 @@ export default function FileExplorerPanel({ mode = "inline", onClose }: FileExpl
     });
   }, [persistTreePaneVisible]);
 
+  const handleFocusFileTreeSearch = useCallback(() => {
+    setTreePaneVisible(true);
+    persistTreePaneVisible(true);
+    if (!model.isSearchOpen()) {
+      model.openSearch();
+    }
+  }, [model, persistTreePaneVisible]);
+
+  useEffect(() => {
+    if (!isFilesPanelOpen) return;
+
+    const command = fileExplorerRouteCommand?.command;
+    const commandId = fileExplorerRouteCommand?.commandId;
+    if (!command || !commandId || consumedRouteCommandIdRef.current === commandId) return;
+    consumedRouteCommandIdRef.current = commandId;
+
+    if (command === "toggleTree") {
+      handleToggleTreePane();
+    } else if (command === "focusSearch") {
+      handleFocusFileTreeSearch();
+    } else {
+      setTreePaneVisible(true);
+      persistTreePaneVisible(true);
+    }
+
+    const clearCommandSearch = (previous: DiffRouteSearch): DiffRouteSearch => ({
+      ...previous,
+      fileExplorerCommand: undefined,
+      fileExplorerCommandId: undefined,
+    });
+
+    if (routeThreadRef) {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(routeThreadRef),
+        replace: true,
+        search: clearCommandSearch,
+      });
+      return;
+    }
+
+    if (routeDraftId) {
+      void navigate({
+        to: "/draft/$draftId",
+        params: buildDraftThreadRouteParams(routeDraftId),
+        replace: true,
+        search: clearCommandSearch,
+      });
+    }
+  }, [
+    fileExplorerRouteCommand,
+    handleFocusFileTreeSearch,
+    handleToggleTreePane,
+    isFilesPanelOpen,
+    navigate,
+    persistTreePaneVisible,
+    routeDraftId,
+    routeThreadRef,
+  ]);
+
   const handleCloseFileTab = useCallback(
     (path: string) => {
       const next = closeFileExplorerTab(openFileTabsRef.current, activeFilePathRef.current, path);
@@ -924,7 +1016,7 @@ export default function FileExplorerPanel({ mode = "inline", onClose }: FileExpl
           {treePaneVisible ? (
             <>
               <div
-                className="min-h-0 shrink-0 overflow-hidden"
+                className="flex h-full min-h-0 shrink-0 overflow-hidden"
                 style={
                   {
                     width: `${treePaneWidth}px`,
@@ -938,7 +1030,7 @@ export default function FileExplorerPanel({ mode = "inline", onClose }: FileExpl
                   } as CSSProperties
                 }
               >
-                <FileTreeComponent model={model} style={{ height: "100%", display: "block" }} />
+                <FileTreeComponent model={model} style={{ height: "100%" }} />
               </div>
               <div
                 aria-label="Resize file tree"

@@ -119,6 +119,7 @@ import { cn, randomHex } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
+import type { FileExplorerCommand } from "../fileExplorerCommands";
 import {
   commandForProjectScript,
   nextProjectScriptId,
@@ -1964,6 +1965,34 @@ export default function ChatView(props: ChatViewProps) {
       },
     });
   }, [activeThread, environmentId, filesOpen, navigate, onFileExplorerPanelOpen, threadId]);
+  const onOpenFilesCommand = useCallback(
+    (command: FileExplorerCommand) => {
+      if (!activeThread) {
+        return;
+      }
+      if (!filesOpen) {
+        onFileExplorerPanelOpen?.();
+      }
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId,
+          threadId,
+        },
+        replace: true,
+        search: (previous) => {
+          const rest = stripDiffSearchParams(previous);
+          return {
+            ...rest,
+            panel: "files",
+            fileExplorerCommand: !filesOpen && command === "toggleTree" ? "showTree" : command,
+            fileExplorerCommandId: randomHex(8),
+          };
+        },
+      });
+    },
+    [activeThread, environmentId, filesOpen, navigate, onFileExplorerPanelOpen, threadId],
+  );
 
   const envLocked = Boolean(
     activeThread &&
@@ -2800,6 +2829,20 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "fileExplorer.toggleTree") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onOpenFilesCommand("toggleTree");
+        return;
+      }
+
+      if (command === "fileExplorer.focusSearch") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onOpenFilesCommand("focusSearch");
+        return;
+      }
+
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -2830,6 +2873,7 @@ export default function ChatView(props: ChatViewProps) {
     keybindings,
     onToggleDiff,
     onToggleFiles,
+    onOpenFilesCommand,
     toggleTerminalVisibility,
     composerRef,
   ]);

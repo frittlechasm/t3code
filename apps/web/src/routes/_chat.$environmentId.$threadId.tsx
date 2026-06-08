@@ -334,7 +334,14 @@ function ChatThreadRouteView() {
 export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
   validateSearch: (search) => parseDiffRouteSearch(search),
   search: {
-    middlewares: [retainSearchParams<DiffRouteSearch>(["panel", "diff"])],
+    middlewares: [
+      retainSearchParams<DiffRouteSearch>([
+        "panel",
+        "diff",
+        "fileExplorerCommand",
+        "fileExplorerCommandId",
+      ]),
+    ],
   },
   component: ChatThreadRouteView,
 });

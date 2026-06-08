@@ -106,6 +106,8 @@ vi.mock("@t3tools/client-runtime", async (importOriginal) => {
     },
     projects: {
       searchEntries: vi.fn(),
+      listEntries: vi.fn(),
+      readFile: vi.fn(),
       writeFile: vi.fn(),
     },
     filesystem: {
@@ -128,6 +130,7 @@ vi.mock("@t3tools/client-runtime", async (importOriginal) => {
       removeWorktree: vi.fn(),
       createRef: vi.fn(),
       switchRef: vi.fn(),
+      getFileDiff: vi.fn(),
       init: vi.fn(),
     },
     git: {

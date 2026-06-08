@@ -50,7 +50,7 @@ export class ProjectListEntriesError extends Schema.TaggedErrorClass<ProjectList
   "ProjectListEntriesError",
   {
     message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {}
 
@@ -95,7 +95,7 @@ export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFil
   "ProjectReadFileError",
   {
     message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {}
 

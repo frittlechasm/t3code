@@ -1506,6 +1506,31 @@ function dispatchChatNewShortcut(): void {
   );
 }
 
+function dispatchFileExplorerToggleTreeShortcut(): void {
+  const useMetaForMod = isMacPlatform(navigator.platform);
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "y",
+      shiftKey: true,
+      metaKey: useMetaForMod,
+      ctrlKey: !useMetaForMod,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function expectPackageJsonFileTreeRowRendered(): void {
+  const fileTree = document.querySelector("file-tree-container");
+  const shadowRoot = fileTree?.shadowRoot;
+  expect(shadowRoot?.textContent).toContain("package");
+
+  const firstItem = shadowRoot?.querySelector("[data-type='item']");
+  const itemRect = firstItem?.getBoundingClientRect();
+  expect(itemRect?.width ?? 0).toBeGreaterThan(0);
+  expect(itemRect?.height ?? 0).toBeGreaterThan(0);
+}
+
 function releaseModShortcut(key?: string): void {
   window.dispatchEvent(
     new KeyboardEvent("keyup", {
@@ -1966,6 +1991,107 @@ describe("ChatView timeline estimator parity (full app)", () => {
             _tag: WS_METHODS.projectsListEntries,
             cwd: "/repo/project",
           });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("opens the file explorer tree shortcut with the tree visible on first open", async () => {
+    setDraftThreadWithoutWorktree();
+    localStorage.setItem("chat_file_explorer_tree_visible", "false");
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          keybindings: [
+            {
+              command: "fileExplorer.toggleTree",
+              shortcut: {
+                key: "y",
+                metaKey: false,
+                ctrlKey: false,
+                shiftKey: true,
+                altKey: false,
+                modKey: true,
+              },
+              whenAst: {
+                type: "not",
+                node: { type: "identifier", name: "terminalFocus" },
+              },
+            },
+          ],
+        };
+      },
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsListEntries) {
+          return {
+            entries: [{ path: "package.json", kind: "file" }],
+            truncated: false,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await waitForServerConfigToApply();
+      dispatchFileExplorerToggleTreeShortcut();
+
+      await vi.waitFor(
+        () => {
+          expect(mounted.router.state.location.search).toMatchObject({ panel: "files" });
+          expect(mounted.router.state.location.search).not.toHaveProperty("fileExplorerCommand");
+          expect(page.getByRole("button", { name: "Hide file tree" }).element()).toBeTruthy();
+          expectPackageJsonFileTreeRowRendered();
+          expect(document.body.textContent).not.toContain("Show the file tree");
+          const listRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.projectsListEntries,
+          );
+          expect(listRequest).toMatchObject({
+            _tag: WS_METHODS.projectsListEntries,
+            cwd: "/repo/project",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("shows the file tree from the file explorer toolbar button", async () => {
+    setDraftThreadWithoutWorktree();
+    localStorage.setItem("chat_file_explorer_tree_visible", "false");
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsListEntries) {
+          return {
+            entries: [{ path: "package.json", kind: "file" }],
+            truncated: false,
+          };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await page.getByRole("button", { name: "Toggle file explorer" }).click();
+      await page.getByRole("button", { name: "Show file tree" }).click();
+
+      await vi.waitFor(
+        () => {
+          expect(page.getByRole("button", { name: "Hide file tree" }).element()).toBeTruthy();
+          expectPackageJsonFileTreeRowRendered();
+          expect(document.body.textContent).not.toContain("No file selected.");
         },
         { timeout: 8_000, interval: 16 },
       );
