@@ -33,6 +33,7 @@ import {
 } from "../terminal-links";
 import {
   isDiffToggleShortcut,
+  isFileExplorerToggleShortcutWithLegacyTerminalFocus,
   isTerminalClearShortcut,
   isTerminalCloseShortcut,
   isTerminalNewShortcut,
@@ -444,7 +445,8 @@ export function TerminalViewport({
         isTerminalSplitShortcut(event, currentKeybindings, options) ||
         isTerminalNewShortcut(event, currentKeybindings, options) ||
         isTerminalCloseShortcut(event, currentKeybindings, options) ||
-        isDiffToggleShortcut(event, currentKeybindings, options)
+        isDiffToggleShortcut(event, currentKeybindings, options) ||
+        isFileExplorerToggleShortcutWithLegacyTerminalFocus(event, currentKeybindings, options)
       ) {
         return false;
       }

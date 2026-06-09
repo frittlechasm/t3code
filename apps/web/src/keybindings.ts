@@ -379,6 +379,53 @@ export function isDiffToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "diff.toggle", options);
 }
 
+export function isFileExplorerToggleShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "fileExplorer.toggle", options);
+}
+
+export function isFileExplorerToggleShortcutWithLegacyTerminalFocus(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  if (isFileExplorerToggleShortcut(event, keybindings, options)) {
+    return true;
+  }
+
+  const context = resolveContext(options);
+  if (!context.terminalFocus) {
+    return false;
+  }
+
+  return isFileExplorerToggleShortcut(event, keybindings, {
+    ...options,
+    context: {
+      ...context,
+      terminalFocus: false,
+    },
+  });
+}
+
+export function isFileExplorerToggleTreeShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "fileExplorer.toggleTree", options);
+}
+
+export function isFileExplorerFocusSearchShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "fileExplorer.focusSearch", options);
+}
+
 export function isChatNewShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,

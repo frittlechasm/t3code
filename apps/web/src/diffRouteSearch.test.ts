@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseDiffRouteSearch } from "./diffRouteSearch";
+import { getOpenRightPanel, isDiffPanelOpen, parseDiffRouteSearch } from "./diffRouteSearch";
 
 describe("parseDiffRouteSearch", () => {
   it("parses valid diff search values", () => {
+    const parsed = parseDiffRouteSearch({
+      panel: "diff",
+      diffTurnId: "turn-1",
+      diffFilePath: "src/app.ts",
+    });
+
+    expect(parsed).toEqual({
+      panel: "diff",
+      diffTurnId: "turn-1",
+      diffFilePath: "src/app.ts",
+    });
+  });
+
+  it("keeps legacy diff search values as a compatibility alias", () => {
     const parsed = parseDiffRouteSearch({
       diff: "1",
       diffTurnId: "turn-1",
@@ -14,6 +28,46 @@ describe("parseDiffRouteSearch", () => {
       diff: "1",
       diffTurnId: "turn-1",
       diffFilePath: "src/app.ts",
+    });
+    expect(isDiffPanelOpen(parsed)).toBe(true);
+    expect(getOpenRightPanel(parsed)).toBe("diff");
+  });
+
+  it("parses file explorer panel state without diff selection", () => {
+    const parsed = parseDiffRouteSearch({
+      panel: "files",
+      diffTurnId: "turn-1",
+      diffFilePath: "src/app.ts",
+    });
+
+    expect(parsed).toEqual({
+      panel: "files",
+    });
+    expect(isDiffPanelOpen(parsed)).toBe(false);
+    expect(getOpenRightPanel(parsed)).toBe("files");
+  });
+
+  it("parses one-shot file explorer commands only for files panel state", () => {
+    expect(
+      parseDiffRouteSearch({
+        panel: "files",
+        fileExplorerCommand: "showTree",
+        fileExplorerCommandId: "command-1",
+      }),
+    ).toEqual({
+      panel: "files",
+      fileExplorerCommand: "showTree",
+      fileExplorerCommandId: "command-1",
+    });
+
+    expect(
+      parseDiffRouteSearch({
+        panel: "diff",
+        fileExplorerCommand: "toggleTree",
+        fileExplorerCommandId: "command-1",
+      }),
+    ).toEqual({
+      panel: "diff",
     });
   });
 
@@ -51,24 +105,24 @@ describe("parseDiffRouteSearch", () => {
 
   it("drops file value when turn is not selected", () => {
     const parsed = parseDiffRouteSearch({
-      diff: "1",
+      panel: "diff",
       diffFilePath: "src/app.ts",
     });
 
     expect(parsed).toEqual({
-      diff: "1",
+      panel: "diff",
     });
   });
 
   it("normalizes whitespace-only values", () => {
     const parsed = parseDiffRouteSearch({
-      diff: "1",
+      panel: "diff",
       diffTurnId: "  ",
       diffFilePath: "  ",
     });
 
     expect(parsed).toEqual({
-      diff: "1",
+      panel: "diff",
     });
   });
 });

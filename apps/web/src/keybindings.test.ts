@@ -11,6 +11,8 @@ import {
   isChatNewShortcut,
   isChatNewLocalShortcut,
   isDiffToggleShortcut,
+  isFileExplorerToggleTreeShortcut,
+  isFileExplorerToggleShortcutWithLegacyTerminalFocus,
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
   isOpenFavoriteEditorShortcut,
@@ -106,6 +108,15 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
+    shortcut: modShortcut("e", { shiftKey: true }),
+    command: "fileExplorer.toggle",
+  },
+  {
+    shortcut: modShortcut("y", { shiftKey: true }),
+    command: "fileExplorer.toggleTree",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
     shortcut: modShortcut("k"),
     command: "commandPalette.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
@@ -137,6 +148,14 @@ const DEFAULT_BINDINGS = compile([
     shortcut: modShortcut("3"),
     command: "modelPicker.jump.3",
     whenAst: whenIdentifier("modelPickerOpen"),
+  },
+]);
+
+const LEGACY_FILE_EXPLORER_TOGGLE_BINDINGS = compile([
+  {
+    shortcut: modShortcut("e", { shiftKey: true }),
+    command: "fileExplorer.toggle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
 ]);
 
@@ -490,6 +509,51 @@ describe("chat/editor shortcuts", () => {
         platform: "MacIntel",
         context: { terminalFocus: true },
       }),
+    );
+  });
+
+  it("matches fileExplorer.toggle shortcut during terminal focus", () => {
+    assert.isTrue(
+      resolveShortcutCommand(event({ key: "e", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }) === "fileExplorer.toggle",
+    );
+  });
+
+  it("matches the legacy fileExplorer.toggle default during terminal focus for compatibility", () => {
+    assert.isTrue(
+      isFileExplorerToggleShortcutWithLegacyTerminalFocus(
+        event({ key: "e", metaKey: true, shiftKey: true }),
+        LEGACY_FILE_EXPLORER_TOGGLE_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: true },
+        },
+      ),
+    );
+  });
+
+  it("matches fileExplorer.toggleTree shortcut outside terminal focus", () => {
+    assert.isTrue(
+      isFileExplorerToggleTreeShortcut(
+        event({ key: "y", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: false },
+        },
+      ),
+    );
+    assert.isFalse(
+      isFileExplorerToggleTreeShortcut(
+        event({ key: "y", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        {
+          platform: "MacIntel",
+          context: { terminalFocus: true },
+        },
+      ),
     );
   });
 });

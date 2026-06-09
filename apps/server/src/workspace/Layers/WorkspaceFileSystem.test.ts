@@ -54,6 +54,106 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 });
 
 it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
+  describe("readFile", () => {
+    it.effect("reads text files relative to the workspace root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "plans/effect-rpc.md", "# Plan\n");
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "plans/effect-rpc.md",
+        });
+
+        expect(result).toEqual({
+          relativePath: "plans/effect-rpc.md",
+          sizeBytes: 7,
+          state: "text",
+          contents: "# Plan\n",
+        });
+      }),
+    );
+
+    it.effect("returns too_large without reading oversized files", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "large.txt", "0123456789");
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "large.txt",
+          maxBytes: 4,
+        });
+
+        expect(result).toEqual({
+          relativePath: "large.txt",
+          sizeBytes: 10,
+          state: "too_large",
+          maxBytes: 4,
+        });
+      }),
+    );
+
+    it.effect("returns binary for files that are not text previewable", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* fileSystem.writeFile(path.join(cwd, "image.bin"), Uint8Array.from([0, 1, 2]));
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "image.bin",
+        });
+
+        expect(result).toEqual({
+          relativePath: "image.bin",
+          sizeBytes: 3,
+          state: "binary",
+        });
+      }),
+    );
+
+    it.effect("returns missing for deleted files", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+
+        const result = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "missing.txt",
+        });
+
+        expect(result).toEqual({
+          relativePath: "missing.txt",
+          sizeBytes: 0,
+          state: "missing",
+        });
+      }),
+    );
+
+    it.effect("rejects reads outside the workspace root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+
+        const error = yield* workspaceFileSystem
+          .readFile({
+            cwd,
+            relativePath: "../escape.md",
+          })
+          .pipe(Effect.flip);
+
+        expect(error.message).toContain(
+          "Workspace file path must be relative to the project root: ../escape.md",
+        );
+      }),
+    );
+  });
+
   describe("writeFile", () => {
     it.effect("writes files relative to the workspace root", () =>
       Effect.gen(function* () {

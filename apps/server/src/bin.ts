@@ -2,6 +2,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Scope from "effect/Scope";
 import { Command } from "effect/unstable/cli";
 import * as CliError from "effect/unstable/cli/CliError";
 
@@ -38,6 +39,8 @@ const connectUnavailableCommand = Command.make("connect").pipe(
   ),
 );
 
+type CliServices = NetService.NetService | NodeServices.NodeServices | Scope.Scope;
+
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
   Command.make("t3", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription("Run the T3 Code server."),
@@ -49,7 +52,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       projectCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
-  );
+  ) as unknown as Command.Command<"t3", unknown, {}, unknown, CliServices>;
 
 export const cli = makeCli();
 
