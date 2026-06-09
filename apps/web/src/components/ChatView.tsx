@@ -2843,6 +2843,13 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "taskWindow.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        togglePlanSidebar();
+        return;
+      }
+
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -2876,6 +2883,7 @@ export default function ChatView(props: ChatViewProps) {
     onOpenFilesCommand,
     toggleTerminalVisibility,
     composerRef,
+    togglePlanSidebar,
   ]);
 
   const onRevertToTurnCount = useCallback(

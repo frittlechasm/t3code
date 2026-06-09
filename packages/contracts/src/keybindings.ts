@@ -56,6 +56,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "fileExplorer.toggle",
   "fileExplorer.toggleTree",
   "fileExplorer.focusSearch",
+  "taskWindow.toggle",
   "commandPalette.toggle",
   "chat.new",
   "chat.newLocal",
