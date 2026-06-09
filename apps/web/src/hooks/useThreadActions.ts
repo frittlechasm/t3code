@@ -98,6 +98,26 @@ export function useThreadActions() {
     refreshArchivedThreadsForEnvironment(target.environmentId);
   }, []);
 
+  const markThreadForRecheck = useCallback(async (target: ScopedThreadRef) => {
+    const api = readEnvironmentApi(target.environmentId);
+    if (!api) return;
+    await api.orchestration.dispatchCommand({
+      type: "thread.recheck.mark",
+      commandId: newCommandId(),
+      threadId: target.threadId,
+    });
+  }, []);
+
+  const clearThreadRecheckMarker = useCallback(async (target: ScopedThreadRef) => {
+    const api = readEnvironmentApi(target.environmentId);
+    if (!api) return;
+    await api.orchestration.dispatchCommand({
+      type: "thread.recheck.clear",
+      commandId: newCommandId(),
+      threadId: target.threadId,
+    });
+  }, []);
+
   const deleteThread = useCallback(
     async (target: ScopedThreadRef, opts: { deletedThreadKeys?: ReadonlySet<string> } = {}) => {
       const api = readEnvironmentApi(target.environmentId);
@@ -286,6 +306,8 @@ export function useThreadActions() {
   return {
     archiveThread,
     unarchiveThread,
+    markThreadForRecheck,
+    clearThreadRecheckMarker,
     deleteThread,
     confirmAndDeleteThread,
   };

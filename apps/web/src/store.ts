@@ -252,6 +252,7 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     error: sanitizeThreadErrorMessage(thread.session?.lastError),
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    recheckRequestedAt: thread.recheckRequestedAt,
     updatedAt: thread.updatedAt,
     latestTurn: thread.latestTurn,
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
@@ -283,6 +284,7 @@ function mapThreadShell(
     error: sanitizeThreadErrorMessage(thread.session?.lastError),
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    recheckRequestedAt: thread.recheckRequestedAt,
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
@@ -301,6 +303,7 @@ function mapThreadShell(
     session,
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    recheckRequestedAt: thread.recheckRequestedAt,
     updatedAt: thread.updatedAt,
     latestTurn: thread.latestTurn,
     branch: thread.branch,
@@ -331,6 +334,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     error: thread.error,
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    recheckRequestedAt: thread.recheckRequestedAt,
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
@@ -402,6 +406,7 @@ function sidebarThreadSummariesEqual(
     threadSessionsEqual(left.session, right.session) &&
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
+    left.recheckRequestedAt === right.recheckRequestedAt &&
     left.updatedAt === right.updatedAt &&
     latestTurnsEqual(left.latestTurn, right.latestTurn) &&
     left.branch === right.branch &&
@@ -427,6 +432,7 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.error === right.error &&
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
+    left.recheckRequestedAt === right.recheckRequestedAt &&
     left.updatedAt === right.updatedAt &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath
@@ -1275,6 +1281,7 @@ function applyEnvironmentOrchestrationEvent(
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
           archivedAt: null,
+          recheckRequestedAt: null,
           deletedAt: null,
           messages: [],
           proposedPlans: [],
@@ -1301,6 +1308,20 @@ function applyEnvironmentOrchestrationEvent(
       return updateThreadState(state, event.payload.threadId, (thread) => ({
         ...thread,
         archivedAt: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "thread.recheck-marked":
+      return updateThreadState(state, event.payload.threadId, (thread) => ({
+        ...thread,
+        recheckRequestedAt: event.payload.recheckRequestedAt,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "thread.recheck-cleared":
+      return updateThreadState(state, event.payload.threadId, (thread) => ({
+        ...thread,
+        recheckRequestedAt: null,
         updatedAt: event.payload.updatedAt,
       }));
 

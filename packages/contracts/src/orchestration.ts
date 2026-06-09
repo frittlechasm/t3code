@@ -345,6 +345,9 @@ export const OrchestrationThread = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  recheckRequestedAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -391,6 +394,9 @@ export const OrchestrationThreadShell = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  recheckRequestedAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -509,6 +515,18 @@ const ThreadArchiveCommand = Schema.Struct({
 
 const ThreadUnarchiveCommand = Schema.Struct({
   type: Schema.Literal("thread.unarchive"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
+const ThreadRecheckMarkCommand = Schema.Struct({
+  type: Schema.Literal("thread.recheck.mark"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
+const ThreadRecheckClearCommand = Schema.Struct({
+  type: Schema.Literal("thread.recheck.clear"),
   commandId: CommandId,
   threadId: ThreadId,
 });
@@ -653,6 +671,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
+  ThreadRecheckMarkCommand,
+  ThreadRecheckClearCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -674,6 +694,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
+  ThreadRecheckMarkCommand,
+  ThreadRecheckClearCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -776,6 +798,8 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
+  "thread.recheck-marked",
+  "thread.recheck-cleared",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -851,6 +875,17 @@ export const ThreadArchivedPayload = Schema.Struct({
 });
 
 export const ThreadUnarchivedPayload = Schema.Struct({
+  threadId: ThreadId,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadRecheckMarkedPayload = Schema.Struct({
+  threadId: ThreadId,
+  recheckRequestedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadRecheckClearedPayload = Schema.Struct({
   threadId: ThreadId,
   updatedAt: IsoDateTime,
 });
@@ -1021,6 +1056,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.unarchived"),
     payload: ThreadUnarchivedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.recheck-marked"),
+    payload: ThreadRecheckMarkedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.recheck-cleared"),
+    payload: ThreadRecheckClearedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

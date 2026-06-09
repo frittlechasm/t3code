@@ -401,6 +401,7 @@ function createSnapshotForTargetUser(options: {
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
         archivedAt: null,
+        recheckRequestedAt: null,
         deletedAt: null,
         messages,
         activities: [],
@@ -467,6 +468,7 @@ function addThreadToSnapshot(
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
         archivedAt: null,
+        recheckRequestedAt: null,
         deletedAt: null,
         messages: [],
         activities: [],
@@ -500,6 +502,7 @@ function toShellThread(thread: OrchestrationReadModel["threads"][number]) {
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     archivedAt: thread.archivedAt,
+    recheckRequestedAt: thread.recheckRequestedAt,
     session: thread.session,
     latestUserMessageAt:
       thread.messages.findLast((message) => message.role === "user")?.createdAt ?? null,
@@ -816,6 +819,7 @@ function createSnapshotWithSecondaryProject(options?: {
             updatedAt: isoAt(31),
           },
           archivedAt: null,
+          recheckRequestedAt: null,
         },
       ]
     : [];
@@ -848,6 +852,7 @@ function createSnapshotWithSecondaryProject(options?: {
             updatedAt: isoAt(25),
           },
           archivedAt: isoAt(26),
+          recheckRequestedAt: null,
         },
       ]
     : [];

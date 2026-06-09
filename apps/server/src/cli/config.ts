@@ -1,4 +1,5 @@
 import * as NetService from "@t3tools/shared/Net";
+import type * as NodeServices from "@effect/platform-node/NodeServices";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import { DesktopBackendBootstrap, PortSchema } from "@t3tools/contracts";
 import * as Config from "effect/Config";
@@ -11,6 +12,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import type * as Scope from "effect/Scope";
 import { Argument, Flag } from "effect/unstable/cli";
 
 import { readBootstrapEnvelope } from "../bootstrap.ts";
@@ -204,7 +206,20 @@ const loadPersistedObservabilitySettings = Effect.fn(function* (settingsPath: st
   return parsePersistedServerObservabilitySettings(raw);
 });
 
-export const resolveServerConfig = (
+type ResolveServerConfig = (
+  flags: CliServerFlags,
+  cliLogLevel: Option.Option<LogLevel.LogLevel>,
+  options?: {
+    readonly startupPresentation?: StartupPresentation;
+    readonly forceAutoBootstrapProjectFromCwd?: boolean;
+  },
+) => Effect.Effect<
+  ServerConfigShape,
+  unknown,
+  NetService.NetService | NodeServices.NodeServices | Scope.Scope
+>;
+
+export const resolveServerConfig = ((
   flags: CliServerFlags,
   cliLogLevel: Option.Option<LogLevel.LogLevel>,
   options?: {
@@ -377,9 +392,14 @@ export const resolveServerConfig = (
     };
 
     return config;
-  });
+  })) as ResolveServerConfig;
 
-export const resolveCliAuthConfig = (
+type ResolveCliAuthConfig = (
+  flags: CliAuthLocationFlags,
+  cliLogLevel: Option.Option<LogLevel.LogLevel>,
+) => ReturnType<ResolveServerConfig>;
+
+export const resolveCliAuthConfig = ((
   flags: CliAuthLocationFlags,
   cliLogLevel: Option.Option<LogLevel.LogLevel>,
 ) =>
@@ -399,7 +419,7 @@ export const resolveCliAuthConfig = (
       tailscaleServePort: Option.none(),
     },
     cliLogLevel,
-  );
+  )) as ResolveCliAuthConfig;
 
 const DurationShorthandPattern = /^(?<value>\d+)(?<unit>ms|s|m|h|d|w)$/i;
 

@@ -45,6 +45,7 @@ export function buildLocalDraftThread(
     error,
     createdAt: draftThread.createdAt,
     archivedAt: null,
+    recheckRequestedAt: null,
     latestTurn: null,
     branch: draftThread.branch,
     worktreePath: draftThread.worktreePath,

@@ -89,6 +89,7 @@ describe("orchestration projector", () => {
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
+        recheckRequestedAt: null,
         deletedAt: null,
         messages: [],
         proposedPlans: [],
@@ -203,6 +204,78 @@ describe("orchestration projector", () => {
       ),
     );
     expect(unarchived.threads[0]?.archivedAt).toBeNull();
+  });
+
+  it("applies thread recheck marker events", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const later = "2026-01-01T00:00:01.000Z";
+    const created = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "demo",
+            modelSelection: {
+              provider: ProviderDriverKind.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    const marked = await Effect.runPromise(
+      projectEvent(
+        created,
+        makeEvent({
+          sequence: 2,
+          type: "thread.recheck-marked",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: later,
+          commandId: "cmd-thread-recheck-mark",
+          payload: {
+            threadId: "thread-1",
+            recheckRequestedAt: later,
+            updatedAt: later,
+          },
+        }),
+      ),
+    );
+    expect(marked.threads[0]?.recheckRequestedAt).toBe(later);
+
+    const cleared = await Effect.runPromise(
+      projectEvent(
+        marked,
+        makeEvent({
+          sequence: 3,
+          type: "thread.recheck-cleared",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: later,
+          commandId: "cmd-thread-recheck-clear",
+          payload: {
+            threadId: "thread-1",
+            updatedAt: later,
+          },
+        }),
+      ),
+    );
+    expect(cleared.threads[0]?.recheckRequestedAt).toBeNull();
   });
 
   it("keeps projector forward-compatible for unhandled event types", async () => {

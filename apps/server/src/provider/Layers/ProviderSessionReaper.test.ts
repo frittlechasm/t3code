@@ -101,6 +101,7 @@ function makeReadModel(
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
+      recheckRequestedAt: null,
       latestUserMessageAt: null,
       hasPendingApprovals: false,
       hasPendingUserInput: false,
@@ -110,8 +111,8 @@ function makeReadModel(
       session: thread.session,
       activities: [],
       proposedPlans: [],
-      checkpoints: [],
       deletedAt: null,
+      checkpoints: [],
     })),
   };
 }
