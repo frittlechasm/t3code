@@ -19,8 +19,13 @@ See the full schema for more details: [`packages/contracts/src/keybindings.ts`](
 
 ```json
 [
-  { "key": "mod+j", "command": "terminal.toggle" },
+  { "key": "ctrl+`", "command": "terminal.toggle" },
   { "key": "mod+d", "command": "terminal.split", "when": "terminalFocus" },
+  { "key": "mod+\\", "command": "terminal.splitFocusNext", "when": "terminalFocus" },
+  { "key": "mod+arrowleft", "command": "terminal.splitFocusLeft", "when": "terminalFocus" },
+  { "key": "mod+arrowdown", "command": "terminal.splitFocusDown", "when": "terminalFocus" },
+  { "key": "mod+arrowup", "command": "terminal.splitFocusUp", "when": "terminalFocus" },
+  { "key": "mod+arrowright", "command": "terminal.splitFocusRight", "when": "terminalFocus" },
   { "key": "mod+n", "command": "terminal.new", "when": "terminalFocus" },
   { "key": "mod+w", "command": "terminal.close", "when": "terminalFocus" },
   { "key": "mod+k", "command": "commandPalette.toggle", "when": "!terminalFocus" },
@@ -51,6 +56,13 @@ Invalid rules are ignored. Invalid config files are ignored. Warnings are logged
 - `terminal.split`: split terminal (in focused terminal context by default)
 - `terminal.new`: create new terminal (in focused terminal context by default)
 - `terminal.close`: close/kill the focused terminal (in focused terminal context by default)
+- `terminal.tabPrevious`: switch to the previous terminal tab/group
+- `terminal.tabNext`: switch to the next terminal tab/group
+- `terminal.splitFocusNext`: cycle focus to the next split terminal in the current group
+- `terminal.splitFocusLeft`: focus the split terminal pane to the left
+- `terminal.splitFocusDown`: focus the split terminal pane below
+- `terminal.splitFocusUp`: focus the split terminal pane above
+- `terminal.splitFocusRight`: focus the split terminal pane to the right
 - `commandPalette.toggle`: open or close the global command palette
 - `chat.new`: create a new chat thread preserving the active thread's branch/worktree state
 - `chat.newLocal`: create a new chat thread for the active project in a new environment (local/worktree determined by app settings (default `local`))

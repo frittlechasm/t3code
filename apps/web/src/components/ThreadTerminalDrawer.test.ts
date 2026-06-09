@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  resolveTerminalSplitFocusTarget,
   resolveTerminalSelectionActionPosition,
+  resolveThreadTerminalDrawerLayout,
+  selectPendingTerminalEventEntries,
+  selectTerminalEventEntriesAfterSnapshot,
   shouldHandleTerminalSelectionMouseUp,
   terminalSelectionActionDelayForClickCount,
 } from "./ThreadTerminalDrawer";
@@ -71,5 +75,169 @@ describe("resolveTerminalSelectionActionPosition", () => {
     expect(shouldHandleTerminalSelectionMouseUp(true, 0)).toBe(true);
     expect(shouldHandleTerminalSelectionMouseUp(false, 0)).toBe(false);
     expect(shouldHandleTerminalSelectionMouseUp(true, 1)).toBe(false);
+  });
+
+  it("replays only terminal events newer than the open snapshot", () => {
+    expect(
+      selectTerminalEventEntriesAfterSnapshot(
+        [
+          {
+            id: 1,
+            event: {
+              threadId: "thread-1",
+              terminalId: "default",
+              sequence: 1,
+              type: "output",
+              data: "before",
+            },
+          },
+          {
+            id: 2,
+            event: {
+              threadId: "thread-1",
+              terminalId: "default",
+              sequence: 2,
+              type: "output",
+              data: "after",
+            },
+          },
+        ],
+        1,
+      ).map((entry) => entry.id),
+    ).toEqual([2]);
+  });
+
+  it("applies only terminal events that have not already been consumed", () => {
+    expect(
+      selectPendingTerminalEventEntries(
+        [
+          {
+            id: 1,
+            event: {
+              threadId: "thread-1",
+              terminalId: "default",
+              sequence: 1,
+              type: "output",
+              data: "one",
+            },
+          },
+          {
+            id: 2,
+            event: {
+              threadId: "thread-1",
+              terminalId: "default",
+              sequence: 2,
+              type: "output",
+              data: "two",
+            },
+          },
+        ],
+        1,
+      ).map((entry) => entry.id),
+    ).toEqual([2]);
+  });
+});
+
+describe("resolveThreadTerminalDrawerLayout", () => {
+  it("derives active group, visible terminals, labels, and tab metadata in one pass", () => {
+    const layout = resolveThreadTerminalDrawerLayout({
+      terminalIds: ["default", "terminal-2", "terminal-3"],
+      activeTerminalId: "terminal-2",
+      activeTerminalGroupId: "group-default",
+      terminalGroups: [
+        {
+          id: "group-default",
+          terminalIds: ["default", "terminal-2"],
+          splitOrientation: "horizontal",
+        },
+        { id: "group-terminal-3", terminalIds: ["terminal-3"] },
+      ],
+    });
+
+    expect(layout.activeTerminalId).toBe("terminal-2");
+    expect(layout.activeGroupIndex).toBe(0);
+    expect(layout.visibleTerminalIds).toEqual(["default", "terminal-2"]);
+    expect(layout.visibleSplitLayout).toEqual({
+      type: "split",
+      orientation: "horizontal",
+      children: [
+        { type: "terminal", terminalId: "default" },
+        { type: "terminal", terminalId: "terminal-2" },
+      ],
+    });
+    expect(layout.terminalLabelById.get("terminal-3")).toBe("Terminal 3");
+    expect(layout.tabs).toEqual([
+      {
+        groupId: "group-default",
+        terminalIds: ["default", "terminal-2"],
+        terminalId: "terminal-2",
+        label: "Split 1",
+        active: true,
+      },
+      {
+        groupId: "group-terminal-3",
+        terminalIds: ["terminal-3"],
+        terminalId: "terminal-3",
+        label: "Terminal 3",
+        active: false,
+      },
+    ]);
+    expect(layout.showTerminalTabs).toBe(true);
+    expect(layout.isSplitView).toBe(true);
+  });
+
+  it("falls back to the default terminal when given an empty layout", () => {
+    const layout = resolveThreadTerminalDrawerLayout({
+      terminalIds: [],
+      activeTerminalId: "",
+      activeTerminalGroupId: "",
+      terminalGroups: [],
+    });
+
+    expect(layout.terminalIds).toEqual(["default"]);
+    expect(layout.activeTerminalId).toBe("default");
+    expect(layout.visibleTerminalIds).toEqual(["default"]);
+    expect(layout.visibleSplitLayout).toBeUndefined();
+    expect(layout.showTerminalTabs).toBe(false);
+    expect(layout.tabs).toEqual([
+      {
+        groupId: "group-default",
+        terminalIds: ["default"],
+        terminalId: "default",
+        label: "Terminal 1",
+        active: true,
+      },
+    ]);
+  });
+});
+
+describe("resolveTerminalSplitFocusTarget", () => {
+  const mixedLayout = {
+    type: "split" as const,
+    orientation: "vertical" as const,
+    children: [
+      {
+        type: "split" as const,
+        orientation: "horizontal" as const,
+        children: [
+          { type: "terminal" as const, terminalId: "left-top" },
+          { type: "terminal" as const, terminalId: "left-bottom" },
+        ],
+      },
+      { type: "terminal" as const, terminalId: "right" },
+    ],
+  };
+
+  it("moves focus according to visual split geometry", () => {
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-top", "down")).toBe("left-bottom");
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-bottom", "up")).toBe("left-top");
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-top", "right")).toBe("right");
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "right", "left")).toBe("left-top");
+  });
+
+  it("returns null when no pane exists in that direction", () => {
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "left-top", "up")).toBeNull();
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "right", "right")).toBeNull();
+    expect(resolveTerminalSplitFocusTarget(mixedLayout, "missing", "left")).toBeNull();
   });
 });

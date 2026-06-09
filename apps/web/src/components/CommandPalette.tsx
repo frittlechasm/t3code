@@ -348,7 +348,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
-          terminalFocus: isTerminalFocused(),
+          terminalFocus: isTerminalFocused(event.target),
           terminalOpen,
         },
       });

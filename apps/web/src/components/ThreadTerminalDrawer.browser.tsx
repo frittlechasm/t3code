@@ -198,6 +198,13 @@ async function mountTerminalViewport(props: {
       {...(props.runtimeEnv ? { runtimeEnv: props.runtimeEnv } : {})}
       onSessionExited={() => undefined}
       onAddTerminalContext={() => undefined}
+      onSplitTerminalShortcut={() => undefined}
+      onNewTerminalShortcut={() => undefined}
+      onCycleTerminalTabShortcut={() => undefined}
+      onTabJumpShortcut={() => undefined}
+      onSplitFocusNextShortcut={() => undefined}
+      onSplitFocusDirectionShortcut={() => undefined}
+      onPinDrawerShortcut={() => undefined}
       focusRequestId={0}
       autoFocus={false}
       resizeEpoch={0}
@@ -222,6 +229,13 @@ async function mountTerminalViewport(props: {
           {...(nextProps.runtimeEnv ? { runtimeEnv: nextProps.runtimeEnv } : {})}
           onSessionExited={() => undefined}
           onAddTerminalContext={() => undefined}
+          onSplitTerminalShortcut={() => undefined}
+          onNewTerminalShortcut={() => undefined}
+          onCycleTerminalTabShortcut={() => undefined}
+          onTabJumpShortcut={() => undefined}
+          onSplitFocusNextShortcut={() => undefined}
+          onSplitFocusDirectionShortcut={() => undefined}
+          onPinDrawerShortcut={() => undefined}
           focusRequestId={0}
           autoFocus={false}
           resizeEpoch={0}

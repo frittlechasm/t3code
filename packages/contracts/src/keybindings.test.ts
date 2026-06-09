@@ -35,6 +35,24 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedClose.command, "terminal.close");
 
+    const parsedTogglePlacement = yield* decode(KeybindingRule, {
+      key: "mod+shift+j",
+      command: "terminal.togglePlacement",
+    });
+    assert.strictEqual(parsedTogglePlacement.command, "terminal.togglePlacement");
+
+    const parsedSplitHorizontal = yield* decode(KeybindingRule, {
+      key: "mod+shift+d",
+      command: "terminal.splitHorizontal",
+    });
+    assert.strictEqual(parsedSplitHorizontal.command, "terminal.splitHorizontal");
+
+    const parsedTabNext = yield* decode(KeybindingRule, {
+      key: "mod+]",
+      command: "terminal.tabNext",
+    });
+    assert.strictEqual(parsedTabNext.command, "terminal.tabNext");
+
     const parsedDiffToggle = yield* decode(KeybindingRule, {
       key: "mod+d",
       command: "diff.toggle",
@@ -71,6 +89,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedModelPickerJump.command, "modelPicker.jump.1");
 
+    const parsedTerminalTabJump = yield* decode(KeybindingRule, {
+      key: "mod+1",
+      command: "terminal.tab.1",
+    });
+    assert.strictEqual(parsedTerminalTabJump.command, "terminal.tab.1");
+
     const parsedThreadPrevious = yield* decode(KeybindingRule, {
       key: "mod+shift+[",
       command: "thread.previous",
@@ -106,8 +130,9 @@ it.effect("parses keybindings array payload", () =>
     const parsed = yield* decode(KeybindingsConfig, [
       { key: "mod+j", command: "terminal.toggle" },
       { key: "mod+d", command: "terminal.split", when: "terminalFocus" },
+      { key: "mod+shift+d", command: "terminal.splitHorizontal", when: "terminalFocus" },
     ]);
-    assert.lengthOf(parsed, 2);
+    assert.lengthOf(parsed, 3);
   }),
 );
 

@@ -32,6 +32,8 @@ const clientSettings: ClientSettings = {
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
   terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+  defaultTerminalPlacement: "bottom",
+  terminalViewMode: "sidebar",
   timestampFormat: "24-hour",
 };
 

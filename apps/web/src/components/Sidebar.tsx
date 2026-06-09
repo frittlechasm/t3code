@@ -77,6 +77,7 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { useThreadRunningTerminalIds } from "../terminalSessionState";
 import { useUiStateStore } from "../uiStateStore";
 import {
+  nativeTerminalTabTraversalDirection,
   resolveShortcutCommand,
   shortcutLabelForCommand,
   shouldShowThreadJumpHintsForModifiers,
@@ -2924,8 +2925,8 @@ export default function Sidebar() {
     return next;
   }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
   const getCurrentSidebarShortcutContext = useCallback(
-    () => ({
-      terminalFocus: isTerminalFocused(),
+    (target?: EventTarget | null) => ({
+      terminalFocus: isTerminalFocused(target),
       terminalOpen: routeThreadRef
         ? selectThreadTerminalUiState(
             useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
@@ -3197,9 +3198,16 @@ export default function Sidebar() {
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      const shortcutContext = getCurrentSidebarShortcutContext();
+      const shortcutContext = getCurrentSidebarShortcutContext(event.target);
 
       if (event.defaultPrevented || event.repeat) {
+        return;
+      }
+
+      if (
+        shortcutContext.terminalFocus &&
+        nativeTerminalTabTraversalDirection(event, platform) !== null
+      ) {
         return;
       }
 

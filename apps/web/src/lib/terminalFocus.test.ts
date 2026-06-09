@@ -11,13 +11,7 @@ class MockHTMLElement {
   };
 
   closest(selector: string): MockHTMLElement | null {
-    if (!this.isConnected) {
-      return null;
-    }
-    if (selector === ".thread-terminal-drawer .xterm" || selector === ".thread-terminal-drawer") {
-      return this;
-    }
-    return null;
+    return selector === ".thread-terminal-drawer .xterm" && this.isConnected ? this : null;
   }
 }
 
@@ -60,14 +54,14 @@ describe("isTerminalFocused", () => {
     expect(isTerminalFocused()).toBe(true);
   });
 
-  it("returns true for focus inside the terminal drawer (e.g. sidebar)", () => {
-    const sidebarButton = new MockHTMLElement();
-    sidebarButton.className = "terminal-sidebar-button";
-    sidebarButton.isConnected = true;
+  it("treats a connected terminal event target as focused even when activeElement is stale", () => {
+    const terminalTarget = new MockHTMLElement();
+    terminalTarget.isConnected = true;
+    const staleActiveElement = new MockHTMLElement();
 
     globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
-    globalThis.document = { activeElement: sidebarButton } as Document;
+    globalThis.document = { activeElement: staleActiveElement } as Document;
 
-    expect(isTerminalFocused()).toBe(true);
+    expect(isTerminalFocused(terminalTarget as unknown as EventTarget)).toBe(true);
   });
 });

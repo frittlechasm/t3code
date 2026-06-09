@@ -119,3 +119,23 @@ This branch adds a task window shortcut that opens and closes the existing chat 
 - The task window uses `ChatView`'s `planSidebarOpen` state and `PlanSidebar` rendering path.
 - `taskWindow.toggle` is part of the shared keybinding contract. Keep contracts, shared defaults, web matching, and settings labels in sync when resolving keybinding conflicts.
 - The default shortcut excludes terminal focus through the shared `when: "!terminalFocus"` condition. Keep that guard unless terminal key handling is explicitly made right-panel aware.
+
+## Terminal Tab Navigation
+
+This patch expands terminal UX and state management with terminal tab/group navigation, nested split layouts, split focus navigation, configurable terminal view mode, bottom-vs-right placement, and pinned terminal drawer support.
+
+### Major changes
+
+- Added terminal domain docs and glossary entries in `CONTEXT.md`, `docs/terminal-placement.md`, `docs/terminal-splits.md`, and `docs/pinned-terminals.md`.
+- Expanded terminal state from one active terminal into grouped state with terminal ids, groups, active terminal/group ids, running subprocess ids, split layouts, placement, and logical-project dimensions.
+- Added nested terminal split layout helpers for vertical and horizontal splits, anchor-specific insertion, pruning, normalization, and split focus resolution.
+- Updated `ThreadTerminalDrawer` to derive layout centrally, render tabs/sidebar modes, render recursive split layouts, and expose toolbar actions for placement, vertical/horizontal split, tab switching, split focus, pinning, and closing.
+- Added terminal settings for `defaultTerminalPlacement` and `terminalViewMode`, while preserving configurable `terminalFontFamily`.
+- Added terminal keybinding commands for placement toggle, horizontal split, tab previous/next, tab jumps, split focus, and pinned drawer actions across contracts, shared defaults, server, and web.
+
+### Architectural context for syncing
+
+- Preserve the distinction between Terminal placement (`bottom` vs `right`), Terminal view mode (`tabs` vs `sidebar`), and Terminal split orientation (`vertical` vs `horizontal` inside split layouts).
+- `ChatView` owns effective placement and may render bottom placement on narrow screens without mutating the saved right-placement preference.
+- `ThreadTerminalDrawer` layout derivation belongs in `resolveThreadTerminalDrawerLayout` so UI rendering and tests stay aligned.
+- Terminal keybinding commands must stay synchronized across `packages/contracts`, `packages/shared`, `apps/server`, and `apps/web`.
