@@ -1989,24 +1989,6 @@ export default function ChatView(props: ChatViewProps) {
       ),
     [keybindings, terminalShortcutLabelOptions],
   );
-  const onComposerAppKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: {
-          terminalFocus: false,
-          terminalOpen: Boolean(terminalState.terminalOpen),
-        },
-      });
-      if (command !== "sidebar.left.toggle") {
-        return false;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      toggleSidebar();
-      return true;
-    },
-    [keybindings, terminalState.terminalOpen, toggleSidebar],
-  );
   const diffPanelShortcutLabel = useMemo(
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
@@ -2014,33 +1996,6 @@ export default function ChatView(props: ChatViewProps) {
   const fileExplorerShortcutLabel = useMemo(
     () =>
       shortcutLabelForCommand(keybindings, "fileExplorer.toggle", nonTerminalShortcutLabelOptions),
-    [keybindings, nonTerminalShortcutLabelOptions],
-  );
-  const fileExplorerToggleTreeShortcutLabel = useMemo(
-    () =>
-      shortcutLabelForCommand(
-        keybindings,
-        "fileExplorer.toggleTree",
-        nonTerminalShortcutLabelOptions,
-      ),
-    [keybindings, nonTerminalShortcutLabelOptions],
-  );
-  const fileExplorerFocusSearchShortcutLabel = useMemo(
-    () =>
-      shortcutLabelForCommand(
-        keybindings,
-        "fileExplorer.focusSearch",
-        nonTerminalShortcutLabelOptions,
-      ),
-    [keybindings, nonTerminalShortcutLabelOptions],
-  );
-  const taskWindowShortcutLabel = useMemo(
-    () => shortcutLabelForCommand(keybindings, "taskWindow.toggle", nonTerminalShortcutLabelOptions),
-    [keybindings, nonTerminalShortcutLabelOptions],
-  );
-  const modelPickerShortcutLabel = useMemo(
-    () =>
-      shortcutLabelForCommand(keybindings, "modelPicker.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
   );
   const onToggleDiff = useCallback(() => {
@@ -3174,6 +3129,13 @@ export default function ChatView(props: ChatViewProps) {
       event.preventDefault();
       event.stopPropagation();
       onToggleDiff();
+      return;
+    }
+
+    if (command === "sidebar.left.toggle") {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSidebar();
       return;
     }
 

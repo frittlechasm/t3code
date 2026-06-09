@@ -12,7 +12,6 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { getClientSettings } from "./hooks/useSettings";
 import { resolveStorage } from "./lib/storage";
-import { terminalRunningSubprocessFromEvent } from "./terminalActivity";
 import {
   DEFAULT_THREAD_TERMINAL_HEIGHT,
   DEFAULT_THREAD_TERMINAL_WIDTH,
@@ -62,6 +61,22 @@ export interface PinnedTerminalDrawerState {
 const TERMINAL_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
 const EMPTY_TERMINAL_EVENT_ENTRIES: ReadonlyArray<TerminalEventEntry> = [];
 const MAX_TERMINAL_EVENT_BUFFER = 200;
+
+function terminalRunningSubprocessFromEvent(event: TerminalEvent): boolean {
+  switch (event.type) {
+    case "activity":
+      return event.hasRunningSubprocess;
+    case "started":
+    case "restarted":
+      return event.snapshot.status === "running";
+    case "cleared":
+    case "error":
+    case "exited":
+    case "output":
+      return false;
+  }
+  return false;
+}
 
 interface PersistedTerminalStateStoreState {
   terminalStateByThreadKey?: Record<string, PersistedThreadTerminalState>;

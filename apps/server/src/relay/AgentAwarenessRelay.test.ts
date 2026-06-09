@@ -272,6 +272,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
+      recheckRequestedAt: null,
       session: null,
       latestUserMessageAt: null,
       hasPendingApprovals: false,
@@ -418,6 +419,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           createdAt: now,
           updatedAt: now,
           archivedAt: null,
+          recheckRequestedAt: null,
           session: {
             threadId,
             status: "running",
@@ -559,6 +561,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           createdAt: now,
           updatedAt: now,
           archivedAt: null,
+          recheckRequestedAt: null,
           session: {
             threadId,
             status: "running",

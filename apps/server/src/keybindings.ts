@@ -531,7 +531,6 @@ const makeKeybindings = Effect.gen(function* () {
         migratedDefaultRules ||= migrated.changed;
         return migrated.rule;
       });
-      const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
         defaultCommand: KeybindingRule["command"];

@@ -440,7 +440,9 @@ it.effect("decodes thread recheck marker events", () =>
       },
     });
 
-    assert.strictEqual(marked.type, "thread.recheck-marked");
+    if (marked.type !== "thread.recheck-marked") {
+      assert.fail(`Expected thread.recheck-marked event, received ${marked.type}.`);
+    }
     assert.strictEqual(marked.payload.recheckRequestedAt, "2026-01-01T00:00:00.000Z");
     assert.strictEqual(cleared.type, "thread.recheck-cleared");
   }),

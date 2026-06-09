@@ -47,6 +47,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  type KeyboardEventHandler,
 } from "react";
 
 import {

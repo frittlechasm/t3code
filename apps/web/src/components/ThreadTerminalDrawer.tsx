@@ -19,10 +19,7 @@ import {
   type TerminalViewMode,
   type ThreadId,
 } from "@t3tools/contracts";
-import {
-  DEFAULT_TERMINAL_FONT_FAMILY,
-  type TerminalPlacement,
-} from "@t3tools/contracts/settings";
+import { DEFAULT_TERMINAL_FONT_FAMILY, type TerminalPlacement } from "@t3tools/contracts/settings";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -133,6 +130,14 @@ function writeTerminalSnapshot(terminal: Terminal, snapshot: TerminalSessionSnap
   terminal.write("\u001bc");
   if (snapshot.history.length > 0) {
     terminal.write(snapshot.history);
+  }
+}
+
+function fitTerminalSafely(fitAddon: FitAddon): void {
+  try {
+    fitAddon.fit();
+  } catch {
+    // The drawer can be hidden or unmeasurable while layout is settling.
   }
 }
 

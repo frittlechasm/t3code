@@ -90,6 +90,7 @@ export function applyThreadDetailEvent(
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
           archivedAt: null,
+          recheckRequestedAt: null,
           deletedAt: null,
           messages: [],
           proposedPlans: [],
