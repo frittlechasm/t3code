@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   resolveTerminalSplitFocusTarget,
@@ -86,7 +86,7 @@ describe("resolveTerminalSelectionActionPosition", () => {
             event: {
               threadId: "thread-1",
               terminalId: "default",
-              createdAt: "2026-04-02T20:00:00.000Z",
+              sequence: 1,
               type: "output",
               data: "before",
             },
@@ -96,13 +96,13 @@ describe("resolveTerminalSelectionActionPosition", () => {
             event: {
               threadId: "thread-1",
               terminalId: "default",
-              createdAt: "2026-04-02T20:00:01.000Z",
+              sequence: 2,
               type: "output",
               data: "after",
             },
           },
         ],
-        "2026-04-02T20:00:00.500Z",
+        1,
       ).map((entry) => entry.id),
     ).toEqual([2]);
   });
@@ -116,7 +116,7 @@ describe("resolveTerminalSelectionActionPosition", () => {
             event: {
               threadId: "thread-1",
               terminalId: "default",
-              createdAt: "2026-04-02T20:00:00.000Z",
+              sequence: 1,
               type: "output",
               data: "one",
             },
@@ -126,7 +126,7 @@ describe("resolveTerminalSelectionActionPosition", () => {
             event: {
               threadId: "thread-1",
               terminalId: "default",
-              createdAt: "2026-04-02T20:00:01.000Z",
+              sequence: 2,
               type: "output",
               data: "two",
             },

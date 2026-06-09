@@ -1,6 +1,6 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime";
 import { ThreadId, type TerminalEvent } from "@t3tools/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   isPinnedSessionThreadId,
@@ -36,17 +36,24 @@ function makeTerminalEvent(
   const base = {
     threadId: THREAD_ID,
     terminalId: "default",
-    createdAt: "2026-04-02T20:00:00.000Z",
+    sequence: 1,
   };
 
   switch (type) {
     case "output":
       return { ...base, type, data: "hello\n", ...overrides } as TerminalEvent;
     case "activity":
-      return { ...base, type, hasRunningSubprocess: true, ...overrides } as TerminalEvent;
+      return {
+        ...base,
+        type,
+        hasRunningSubprocess: true,
+        label: "npm run dev",
+        ...overrides,
+      } as TerminalEvent;
     case "error":
       return { ...base, type, message: "boom", ...overrides } as TerminalEvent;
     case "cleared":
+    case "closed":
       return { ...base, type, ...overrides } as TerminalEvent;
     case "exited":
       return { ...base, type, exitCode: 0, exitSignal: null, ...overrides } as TerminalEvent;
@@ -65,6 +72,7 @@ function makeTerminalEvent(
           history: "",
           exitCode: null,
           exitSignal: null,
+          label: "Shell",
           updatedAt: "2026-04-02T20:00:00.000Z",
         },
         ...overrides,
@@ -622,6 +630,7 @@ describe("terminalStateStore actions", () => {
           history: "",
           exitCode: null,
           exitSignal: null,
+          label: "Shell",
           updatedAt: "2026-04-02T20:00:00.000Z",
         },
       }),
@@ -732,7 +741,7 @@ describe("pinned terminal drawer", () => {
 
   it("produces a stable synthetic pinned session thread id", () => {
     expect(pinnedSessionThreadId("env-1", "repo:owner/project")).toBe(
-      "pinned env-1 repo:owner/project",
+      "pinnedenv-1repo:owner/project",
     );
   });
 

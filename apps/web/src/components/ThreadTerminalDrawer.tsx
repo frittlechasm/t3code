@@ -133,9 +133,12 @@ function writeTerminalSnapshot(terminal: Terminal, snapshot: TerminalSessionSnap
 
 export function selectTerminalEventEntriesAfterSnapshot(
   entries: ReadonlyArray<{ id: number; event: TerminalEvent }>,
-  snapshotUpdatedAt: string,
+  snapshotSequence: number | undefined,
 ): ReadonlyArray<{ id: number; event: TerminalEvent }> {
-  return entries.filter((entry) => entry.event.createdAt > snapshotUpdatedAt);
+  if (snapshotSequence === undefined) {
+    return entries;
+  }
+  return entries.filter((entry) => (entry.event.sequence ?? 0) > snapshotSequence);
 }
 
 export function selectPendingTerminalEventEntries(
@@ -759,12 +762,15 @@ export function TerminalViewport({
         return;
       }
 
-      const details = [
-        typeof event.exitCode === "number" ? `code ${event.exitCode}` : null,
-        typeof event.exitSignal === "number" ? `signal ${event.exitSignal}` : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(", ");
+      const details =
+        event.type === "exited"
+          ? [
+              typeof event.exitCode === "number" ? `code ${event.exitCode}` : null,
+              typeof event.exitSignal === "number" ? `signal ${event.exitSignal}` : null,
+            ]
+              .filter((value): value is string => value !== null)
+              .join(", ")
+          : "";
       writeSystemMessage(
         activeTerminal,
         details.length > 0 ? `Process exited (${details})` : "Process exited",
@@ -845,7 +851,7 @@ export function TerminalViewport({
         );
         const replayEntries = selectTerminalEventEntriesAfterSnapshot(
           bufferedEntries,
-          snapshot.updatedAt,
+          snapshot.sequence,
         );
         for (const entry of replayEntries) {
           applyTerminalEvent(entry.event);

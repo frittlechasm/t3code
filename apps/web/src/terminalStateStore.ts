@@ -488,7 +488,7 @@ function terminalEventBufferKey(threadRef: ScopedThreadRef, terminalId: string):
 }
 
 export function pinnedSessionThreadId(environmentId: string, logicalProjectKey: string): string {
-  return `pinned ${environmentId} ${logicalProjectKey}`;
+  return `pinned${environmentId}${logicalProjectKey}`;
 }
 
 export function isPinnedSessionThreadId(id: string): boolean {
@@ -496,7 +496,7 @@ export function isPinnedSessionThreadId(id: string): boolean {
 }
 
 function pinnedTerminalDrawerKey(logicalProjectKey: string, environmentId: string): string {
-  return `${logicalProjectKey} ${environmentId}`;
+  return `${logicalProjectKey}${environmentId}`;
 }
 
 function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[] {
