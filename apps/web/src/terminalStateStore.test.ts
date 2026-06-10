@@ -741,7 +741,7 @@ describe("pinned terminal drawer", () => {
 
   it("produces a stable synthetic pinned session thread id", () => {
     expect(pinnedSessionThreadId("env-1", "repo:owner/project")).toBe(
-      "pinnedenv-1repo:owner/project",
+      "pinned\u0000env-1\u0000repo:owner/project",
     );
   });
 

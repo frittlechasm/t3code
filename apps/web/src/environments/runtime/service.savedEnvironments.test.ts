@@ -191,6 +191,7 @@ function createClient() {
       clear: vi.fn(async () => undefined),
       restart: vi.fn(async () => undefined),
       close: vi.fn(async () => undefined),
+      onEvent: vi.fn(() => () => undefined),
       onMetadata: vi.fn(() => () => undefined),
     },
     projects: {

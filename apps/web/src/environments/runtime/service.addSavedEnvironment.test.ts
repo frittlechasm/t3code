@@ -152,6 +152,7 @@ vi.mock("@t3tools/client-runtime", async (importOriginal) => {
         getConfig: mockClientGetConfig,
       },
       terminal: {
+        onEvent: vi.fn(() => () => undefined),
         onMetadata: vi.fn(() => () => undefined),
       },
       orchestration: {
@@ -652,7 +653,8 @@ describe("addSavedEnvironment", () => {
       },
       client: {
         terminal: {
-          onMetadata: vi.fn(() => () => undefined),
+          onEvent: vi.fn(() => () => undefined),
+        onMetadata: vi.fn(() => () => undefined),
         },
       },
       ensureBootstrapped: async () => undefined,
