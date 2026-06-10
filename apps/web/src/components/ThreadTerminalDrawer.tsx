@@ -131,6 +131,14 @@ function writeTerminalSnapshot(terminal: Terminal, snapshot: TerminalSessionSnap
   }
 }
 
+function fitTerminalSafely(fitAddon: FitAddon): void {
+  try {
+    fitAddon.fit();
+  } catch {
+    // The drawer can be hidden or unmeasurable while layout is settling.
+  }
+}
+
 export function selectTerminalEventEntriesAfterSnapshot(
   entries: ReadonlyArray<{ id: number; event: TerminalEvent }>,
   snapshotSequence: number | undefined,
@@ -331,6 +339,7 @@ interface TerminalViewportProps {
   autoFocus: boolean;
   resizeEpoch: number;
   drawerHeight: number;
+  drawerWidth: number;
   keybindings: ResolvedKeybindingsConfig;
 }
 
@@ -356,6 +365,7 @@ export function TerminalViewport({
   autoFocus,
   resizeEpoch,
   drawerHeight,
+  drawerWidth,
   keybindings,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -428,7 +438,7 @@ export function TerminalViewport({
     });
     terminal.loadAddon(fitAddon);
     terminal.open(mount);
-    fitAddon.fit();
+    fitTerminalSafely(fitAddon);
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -832,7 +842,7 @@ export function TerminalViewport({
         const activeTerminal = terminalRef.current;
         const activeFitAddon = fitAddonRef.current;
         if (!activeTerminal || !activeFitAddon) return;
-        activeFitAddon.fit();
+        fitTerminalSafely(activeFitAddon);
         const snapshot = await api.terminal.open({
           threadId: effectiveThreadId,
           terminalId,
@@ -878,7 +888,7 @@ export function TerminalViewport({
       if (!activeTerminal || !activeFitAddon) return;
       const wasAtBottom =
         activeTerminal.buffer.active.viewportY >= activeTerminal.buffer.active.baseY;
-      activeFitAddon.fit();
+      fitTerminalSafely(activeFitAddon);
       if (wasAtBottom) {
         activeTerminal.scrollToBottom();
       }
@@ -936,7 +946,7 @@ export function TerminalViewport({
     if (!api || !terminal || !fitAddon) return;
     const wasAtBottom = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
     const frame = window.requestAnimationFrame(() => {
-      fitAddon.fit();
+      fitTerminalSafely(fitAddon);
       if (wasAtBottom) {
         terminal.scrollToBottom();
       }
@@ -952,7 +962,7 @@ export function TerminalViewport({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [drawerHeight, environmentId, resizeEpoch, terminalId, effectiveThreadId]);
+  }, [drawerHeight, drawerWidth, environmentId, resizeEpoch, terminalId, effectiveThreadId]);
   return (
     <div
       ref={containerRef}
@@ -1280,6 +1290,7 @@ interface TerminalSplitLayoutViewProps {
   focusRequestId: number;
   resizeEpoch: number;
   drawerHeight: number;
+  drawerWidth: number;
   keybindings: ResolvedKeybindingsConfig;
 }
 
@@ -1317,6 +1328,7 @@ function TerminalSplitLayoutView(props: TerminalSplitLayoutViewProps) {
           autoFocus={terminalId === props.activeTerminalId}
           resizeEpoch={props.resizeEpoch}
           drawerHeight={props.drawerHeight}
+          drawerWidth={props.drawerWidth}
           keybindings={props.keybindings}
         />
       </div>
@@ -1903,6 +1915,7 @@ export default function ThreadTerminalDrawer({
                 focusRequestId={focusRequestId}
                 resizeEpoch={resizeEpoch}
                 drawerHeight={drawerHeight}
+                drawerWidth={drawerWidth}
                 keybindings={keybindings}
               />
             ) : (
@@ -1930,6 +1943,7 @@ export default function ThreadTerminalDrawer({
                   autoFocus
                   resizeEpoch={resizeEpoch}
                   drawerHeight={drawerHeight}
+                  drawerWidth={drawerWidth}
                   keybindings={keybindings}
                 />
               </div>
