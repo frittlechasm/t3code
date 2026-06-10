@@ -804,7 +804,12 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   }
 
   return (
-    <div className={cn(placement === "right" && "h-full", !visible && "hidden")}>
+    <div
+      className={cn(
+        placement === "right" ? "flex h-full min-h-0 shrink-0" : "min-h-0",
+        !visible && "hidden",
+      )}
+    >
       <ThreadTerminalDrawer
         threadRef={threadRef}
         threadId={threadId}

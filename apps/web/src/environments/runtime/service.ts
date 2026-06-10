@@ -7,6 +7,7 @@ import {
   type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
   type ServerConfig,
+  type TerminalEvent,
   EnvironmentAuthInvalidError,
   ThreadId,
 } from "@t3tools/contracts";
@@ -77,6 +78,7 @@ import {
   selectThreadByRef,
   selectThreadsAcrossEnvironments,
 } from "~/store";
+import { isPinnedSessionThreadId, useTerminalStateStore } from "~/terminalStateStore";
 import { useTerminalUiStateStore } from "~/terminalUiStateStore";
 import { useUiStateStore } from "~/uiStateStore";
 import { getServerConfig } from "../../rpc/serverState";
@@ -140,6 +142,7 @@ const lastAppliedProjectionVersionByEnvironment = new Map<
   }
 >();
 const terminalMetadataSubscriptions = new Map<EnvironmentId, () => void>();
+const terminalEventSubscriptions = new Map<EnvironmentId, () => void>();
 
 let activeService: EnvironmentServiceState | null = null;
 let needsProviderInvalidation = false;
@@ -983,6 +986,35 @@ function reconcileSnapshotDerivedState() {
   useTerminalUiStateStore.getState().removeOrphanedTerminalUiStates(activeThreadKeys);
 }
 
+export function shouldApplyTerminalEvent(input: {
+  serverThreadArchivedAt: string | null | undefined;
+  hasDraftThread: boolean;
+}): boolean {
+  if (input.serverThreadArchivedAt !== undefined) {
+    return input.serverThreadArchivedAt === null;
+  }
+
+  return input.hasDraftThread;
+}
+
+function applyTerminalEventFromStream(event: TerminalEvent, environmentId: EnvironmentId): void {
+  const threadRef = scopeThreadRef(environmentId, ThreadId.make(event.threadId));
+  if (!isPinnedSessionThreadId(event.threadId)) {
+    const serverThread = selectThreadByRef(useStore.getState(), threadRef);
+    const hasDraftThread =
+      useComposerDraftStore.getState().getDraftThreadByRef(threadRef) !== null;
+    if (
+      !shouldApplyTerminalEvent({
+        serverThreadArchivedAt: serverThread?.archivedAt,
+        hasDraftThread,
+      })
+    ) {
+      return;
+    }
+  }
+  useTerminalStateStore.getState().applyTerminalEvent(threadRef, event);
+}
+
 function applyRecoveredEventBatch(
   events: ReadonlyArray<OrchestrationEvent>,
   environmentId: EnvironmentId,
@@ -1397,6 +1429,13 @@ function registerConnection(connection: EnvironmentConnection): EnvironmentConne
       client: connection.client,
     }),
   );
+  terminalEventSubscriptions.get(connection.environmentId)?.();
+  terminalEventSubscriptions.set(
+    connection.environmentId,
+    connection.client.terminal.onEvent((event) => {
+      applyTerminalEventFromStream(event, connection.environmentId);
+    }),
+  );
   attachThreadDetailSubscriptionsForEnvironment(connection.environmentId);
   emitEnvironmentConnectionRegistryChange();
   return connection;
@@ -1412,6 +1451,8 @@ async function removeConnection(environmentId: EnvironmentId): Promise<boolean> 
   environmentConnections.delete(environmentId);
   terminalMetadataSubscriptions.get(environmentId)?.();
   terminalMetadataSubscriptions.delete(environmentId);
+  terminalEventSubscriptions.get(environmentId)?.();
+  terminalEventSubscriptions.delete(environmentId);
   terminalSessionManager.invalidateEnvironment(environmentId);
   emitEnvironmentConnectionRegistryChange();
   detachThreadDetailSubscriptionsForEnvironment(environmentId);
@@ -2048,6 +2089,10 @@ export async function resetEnvironmentServiceForTests(): Promise<void> {
     unsubscribe();
   }
   terminalMetadataSubscriptions.clear();
+  for (const unsubscribe of terminalEventSubscriptions.values()) {
+    unsubscribe();
+  }
+  terminalEventSubscriptions.clear();
   terminalSessionManager.reset();
   await Promise.all(
     [...environmentConnections.keys()].map((environmentId) => removeConnection(environmentId)),
